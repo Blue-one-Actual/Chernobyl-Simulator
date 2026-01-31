@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chernobyl Kontrollraum — Simulator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Chernobyl — Kontrollraum (Simulator)</h1>
+  </header>
+  <main class="container">
+    <section class="left">
+      <div class="core-card">
+        <h2>Kern</h2>
+        <svg id="reactor-svg" viewBox="0 0 200 240">
+          <rect x="20" y="20" width="160" height="200" rx="10" ry="10" fill="#222" stroke="#444" />
+          <g id="control-rods"></g>
+          <circle id="core-glow" cx="100" cy="120" r="40" fill="#ff9800" opacity="0.2" />
+        </svg>
+        <div class="indicators">
+          <div>Leistung: <span id="power">0</span>%</div>
+          <div>Temperatur: <span id="temperature">0</span> °C</div>
+          <div>Druck: <span id="pressure">0</span> kPa</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="right">
+      <h2>Steuerung</h2>
+      <label>Regelstab-Einzug: <span id="rod-val">100</span>%</label>
+      <input id="rod-slider" type="range" min="0" max="100" value="100">
+
+      <div class="buttons">
+        <button id="start-btn">Start</button>
+        <button id="stop-btn">Stop</button>
+        <button id="scram-btn" class="danger">EMERGENCY SCRAM</button>
+      </div>
+
+      <label><input id="cooling" type="checkbox" checked> Kühlung aktiviert</label>
+
+      <div class="log">
+        <h3>System-Log</h3>
+        <div id="log" class="log-box"></div>
+      </div>
+    </aside>
+  </main>
+  <footer>
+    <small>Nur eine vereinfachte, pädagogische Simulation — nicht für echte Steuerungen.</small>
+  </footer>
+  <script src="app.js" defer></script>
+</body>
+</html>
