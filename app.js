@@ -1,6 +1,7 @@
 // Vereinfachte pädagogische Simulation des Kontrollraums
 const state = {
-  rod: 100, // 100% eingezogen = max abgesichert
+  // Removed rod-based control; placeholder `manualControl` for future control implementation
+  manualControl: 50, // 0..100, currently unused
   cooling: true,
   running: false,
   power: 0, // 0-100%
@@ -16,8 +17,6 @@ function log(msg){
 }
 
 // DOM refs
-const rodSlider = el('rod-slider')
-const rodVal = el('rod-val')
 const cooling = el('cooling')
 const startBtn = el('start-btn')
 const stopBtn = el('stop-btn')
@@ -27,11 +26,6 @@ const tempEl = el('temperature')
 const pressureEl = el('pressure')
 const coreGlow = el('core-glow')
 const rodsGroup = el('control-rods')
-
-rodSlider.addEventListener('input', e => {
-  state.rod = Number(e.target.value)
-  rodVal.textContent = state.rod
-})
 
 cooling.addEventListener('change', e => {
   state.cooling = e.target.checked
@@ -48,32 +42,14 @@ stopBtn.addEventListener('click', ()=>{
 })
 
 scramBtn.addEventListener('click', ()=>{
-  // Emergency SCRAM: regeln vollständig einfahren
-  state.rod = 100
-  rodSlider.value = 100
-  rodVal.textContent = 100
+  // Emergency SCRAM: sofort drosseln und stoppen
   state.running = false
-  log('EMERGENCY SCRAM: Alle Regelstäbe voll eingefahren')
+  state.power = Math.min(state.power, 20) // reduce power rapidly
+  log('EMERGENCY SCRAM: Reaktor gestoppt und Leistung gedrosselt')
 })
 
 // draw control rods (visual only)
-function renderRods(){
-  const g = []
-  rodsGroup.innerHTML = ''
-  for(let i=0;i<6;i++){
-    const x = 30 + i*26
-    const insertion = state.rod/100 // 0..1, 1 = fully inserted
-    const y = 30 + (1-insertion)*120
-    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
-    rect.setAttribute('x', x)
-    rect.setAttribute('y', y)
-    rect.setAttribute('width', 12)
-    rect.setAttribute('height', 140 - (1-insertion)*120)
-    rect.setAttribute('fill','#bdbdbd')
-    rect.setAttribute('stroke','#888')
-    rodsGroup.appendChild(rect)
-  }
-}
+// control rods removed; visual will be reworked separately
 
 function updateUI(){
   powerEl.textContent = Math.round(state.power)
@@ -91,8 +67,49 @@ function updateUI(){
     const angle = (state.power/100) * 180 - 90
     needle.setAttribute('transform', `rotate(${angle} 100 140)`)
   }
-  renderRods()
+  // no control rods to render
 }
+
+// --- Mosaic rendering (161 cores) ---
+function renderMosaic(count = 161){
+  const svg = document.getElementById('reactor-mosaic')
+  if(!svg) return
+  while(svg.firstChild) svg.removeChild(svg.firstChild)
+  const w = 200, h = 240
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+  const cx = w/2, cy = h*0.48
+  const R = 78 // max radius for mosaic
+  const golden = Math.PI * (3 - Math.sqrt(5)) // ~2.39996
+  const scale = R / Math.sqrt(count)
+
+  for(let i=0;i<count;i++){
+    const r = scale * Math.sqrt(i)
+    const theta = i * golden
+    const x = cx + r * Math.cos(theta)
+    const y = cy + r * Math.sin(theta)
+    const core = document.createElementNS('http://www.w3.org/2000/svg','circle')
+    core.setAttribute('cx', x.toFixed(2))
+    core.setAttribute('cy', y.toFixed(2))
+    core.setAttribute('r', 5)
+    // color varies slightly by position and power
+    const hue = 45 + (i % 20)
+    const powerFactor = Math.min(1, state.power/120)
+    const light = 45 + Math.round(powerFactor * 40)
+    core.setAttribute('fill', `hsl(${hue} ${90}% ${light}%)`)
+    core.setAttribute('class','mosaic-core')
+    core.dataset.index = i+1
+    core.addEventListener('click', ()=>{
+      log(`Kern #${i+1} ausgewählt`)
+      // flash selected core
+      core.setAttribute('stroke','#fff')
+      setTimeout(()=>core.removeAttribute('stroke'),300)
+    })
+    svg.appendChild(core)
+  }
+}
+
+// call mosaic on load and when power changes
+renderMosaic(161)
 
 // simple physics loop
 setInterval(()=>{
@@ -130,8 +147,6 @@ setInterval(()=>{
 }, 500)
 
 // initial render
-rodVal.textContent = state.rod
-rodSlider.value = state.rod
 cooling.checked = state.cooling
 updateUI()
-log('Simulator geladen')
+log('Simulator geladen (ohne Regelstab-UI)')

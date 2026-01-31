@@ -11,6 +11,13 @@
     <h1>Chernobyl — Kontrollraum (Simulator)</h1>
   </header>
   <main class="container">
+    <nav class="side-menu">
+      <ul>
+        <li class="active">Reaktor Control</li>
+        <li>Security Center</li>
+        <li>Turbine Room</li>
+      </ul>
+    </nav>
     <section class="left">
       <div class="core-card">
         <div class="card-header">
@@ -18,11 +25,7 @@
           <div class="hazard-stripe" aria-hidden="true"></div>
         </div>
         <div class="core-visual">
-          <svg id="reactor-svg" viewBox="0 0 200 240">
-            <rect x="20" y="20" width="160" height="200" rx="10" ry="10" fill="#151515" stroke="#3a3a3a" />
-            <g id="control-rods"></g>
-            <circle id="core-glow" cx="100" cy="120" r="40" fill="#ff9800" opacity="0.2" />
-          </svg>
+          <svg id="reactor-mosaic" viewBox="0 0 200 240" preserveAspectRatio="xMidYMid meet" aria-label="Mosaic of reactor cores"></svg>
 
           <svg id="power-gauge" viewBox="0 0 200 160" class="gauge" aria-hidden="true">
             <path d="M20 140 A80 80 0 0 1 180 140" fill="none" stroke="#222" stroke-width="12"/>
@@ -40,10 +43,8 @@
       </div>
     </section>
 
-    <aside class="right">
+      <aside class="right">
       <h2>Steuerung</h2>
-      <label>Regelstab-Einzug: <span id="rod-val">100</span>%</label>
-      <input id="rod-slider" type="range" min="0" max="100" value="100">
 
       <div class="buttons">
         <button id="start-btn">Start</button>
