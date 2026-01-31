@@ -79,8 +79,18 @@ function updateUI(){
   powerEl.textContent = Math.round(state.power)
   tempEl.textContent = Math.round(state.temp)
   pressureEl.textContent = state.pressure.toFixed(1)
-  coreGlow.setAttribute('opacity', Math.min(0.9, 0.15 + state.power/120))
-  coreGlow.setAttribute('fill', state.power>75? '#ff3b3b' : '#ff9800')
+  coreGlow.setAttribute('opacity', Math.min(0.9, 0.12 + state.power/110))
+  // shift color from yellow -> orange -> red as power rises
+  if(state.power > 80) coreGlow.setAttribute('fill', '#ff3b3b')
+  else if(state.power > 50) coreGlow.setAttribute('fill', '#ff8a00')
+  else coreGlow.setAttribute('fill', '#ffd54f')
+  
+  // rotate power gauge needle: map 0..100 -> -90..+90
+  const needle = document.getElementById('power-needle')
+  if(needle){
+    const angle = (state.power/100) * 180 - 90
+    needle.setAttribute('transform', `rotate(${angle} 100 140)`)
+  }
   renderRods()
 }
 
