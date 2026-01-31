@@ -13,12 +13,13 @@
   <main class="container">
     <nav class="side-menu">
       <ul>
-        <li class="active">Reaktor Control</li>
-        <li>Security Center</li>
-        <li>Turbine Room</li>
+        <li data-view="reactor" class="active">Reaktor Control</li>
+        <li data-view="security">Security Center</li>
+        <li data-view="turbine">Turbine Room</li>
       </ul>
     </nav>
     <section class="left">
+      <div id="view-reactor" class="view active">
       <div class="core-card">
         <div class="card-header">
           <h2>КЕРНОВЫЙ РЕАКТОР</h2>
@@ -39,6 +40,33 @@
           <div>Leistung: <span id="power">0</span>%</div>
           <div>Temperatur: <span id="temperature">0</span> °C</div>
           <div>Druck: <span id="pressure">0</span> kPa</div>
+        </div>
+      </div>
+      </div>
+
+      <div id="view-security" class="view">
+        <div class="core-card">
+          <div class="card-header"><h2>Security Center</h2></div>
+          <div class="security-panel">
+            <p>Überwachungskameras: <strong>Online</strong></p>
+            <ul>
+              <li>Zone A: OK</li>
+              <li>Zone B: OK</li>
+              <li>Zone C: Bewegung erkannt</li>
+            </ul>
+            <button id="raise-alarm">Alarm auslösen</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-turbine" class="view">
+        <div class="core-card">
+          <div class="card-header"><h2>Turbine Room</h2></div>
+          <div class="turbine-panel">
+            <p>Aktuelle Drehzahl: <span id="rpm">0</span> RPM</p>
+            <button id="turbine-start">Start Turbine</button>
+            <button id="turbine-stop">Stop Turbine</button>
+          </div>
         </div>
       </div>
     </section>

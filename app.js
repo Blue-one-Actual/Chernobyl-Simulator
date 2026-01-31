@@ -78,38 +78,106 @@ function renderMosaic(count = 161){
   const w = 200, h = 240
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
   const cx = w/2, cy = h*0.48
-  const R = 78 // max radius for mosaic
-  const golden = Math.PI * (3 - Math.sqrt(5)) // ~2.39996
-  const scale = R / Math.sqrt(count)
 
-  for(let i=0;i<count;i++){
-    const r = scale * Math.sqrt(i)
-    const theta = i * golden
-    const x = cx + r * Math.cos(theta)
-    const y = cy + r * Math.sin(theta)
-    const core = document.createElementNS('http://www.w3.org/2000/svg','circle')
-    core.setAttribute('cx', x.toFixed(2))
-    core.setAttribute('cy', y.toFixed(2))
-    core.setAttribute('r', 5)
-    // color varies slightly by position and power
-    const hue = 45 + (i % 20)
-    const powerFactor = Math.min(1, state.power/120)
-    const light = 45 + Math.round(powerFactor * 40)
-    core.setAttribute('fill', `hsl(${hue} ${90}% ${light}%)`)
-    core.setAttribute('class','mosaic-core')
-    core.dataset.index = i+1
-    core.addEventListener('click', ()=>{
-      log(`Kern #${i+1} ausgewählt`)
-      // flash selected core
-      core.setAttribute('stroke','#fff')
-      setTimeout(()=>core.removeAttribute('stroke'),300)
-    })
-    svg.appendChild(core)
+  // Create a square grid larger than needed, then pick the `count` cells closest to center.
+  const base = Math.ceil(Math.sqrt(count))
+  const n = base + 6 // padding to allow a circular crop
+  const tile = 8
+  const gap = 2
+  const step = tile + gap
+  const grid = []
+  const startX = cx - (n-1)/2 * step
+  const startY = cy - (n-1)/2 * step
+
+  for(let row=0; row<n; row++){
+    for(let col=0; col<n; col++){
+      const x = startX + col * step
+      const y = startY + row * step
+      const dx = x - cx
+      const dy = y - cy
+      const dist = Math.sqrt(dx*dx + dy*dy)
+      grid.push({x,y,dist,row,col})
+    }
   }
+
+  // sort by distance to center and take the nearest `count` cells
+  grid.sort((a,b)=>a.dist-b.dist)
+  const chosen = grid.slice(0, count)
+
+  // render chosen tiles (as small squares to mimic tiled core mosaic)
+  chosen.forEach((cell,i)=>{
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
+    rect.setAttribute('x', (cell.x - tile/2).toFixed(2))
+    rect.setAttribute('y', (cell.y - tile/2).toFixed(2))
+    rect.setAttribute('width', tile)
+    rect.setAttribute('height', tile)
+    const hue = 48 + (i % 18)
+    const powerFactor = Math.min(1, state.power/120)
+    const light = 44 + Math.round(powerFactor * 44)
+    rect.setAttribute('fill', `hsl(${hue} ${85}% ${light}%)`)
+    rect.setAttribute('class','mosaic-core')
+    rect.dataset.index = i+1
+    rect.addEventListener('click', ()=>{
+      log(`Kern #${i+1} ausgewählt`)
+      rect.setAttribute('stroke','#fff')
+      setTimeout(()=>rect.removeAttribute('stroke'),300)
+    })
+    svg.appendChild(rect)
+  })
 }
 
 // call mosaic on load and when power changes
 renderMosaic(161)
+
+// --- View switching logic ---
+function switchView(name){
+  // menu
+  document.querySelectorAll('.side-menu li').forEach(li=>{
+    if(li.dataset.view === name) li.classList.add('active')
+    else li.classList.remove('active')
+  })
+  // views
+  document.querySelectorAll('.view').forEach(v=>{
+    if(v.id === `view-${name}`) v.classList.add('active')
+    else v.classList.remove('active')
+  })
+  // trigger specific updates
+  if(name === 'reactor') renderMosaic(161)
+  if(name === 'security') updateSecurityView()
+  if(name === 'turbine') updateTurbineView()
+}
+
+document.querySelectorAll('.side-menu li').forEach(li=>{
+  li.addEventListener('click', ()=>{
+    const name = li.dataset.view
+    if(name) switchView(name)
+  })
+})
+
+function updateSecurityView(){
+  // placeholder: add dynamic status updates here
+}
+
+let turbineRunning = false
+function updateTurbineView(){
+  const rpmEl = document.getElementById('rpm')
+  if(!rpmEl) return
+  const target = turbineRunning ? 3600 : 0
+  // smooth approach
+  const current = Number(rpmEl.textContent || 0)
+  const next = current + (target - current) * 0.12
+  rpmEl.textContent = Math.round(next)
+}
+
+document.getElementById('turbine-start')?.addEventListener('click', ()=>{ turbineRunning = true; log('Turbine startet') })
+document.getElementById('turbine-stop')?.addEventListener('click', ()=>{ turbineRunning = false; log('Turbine gestoppt') })
+document.getElementById('raise-alarm')?.addEventListener('click', ()=>{ log('Security Alarm manuell ausgelöst') })
+
+// periodically update turbine rpm while view is visible
+setInterval(()=>{
+  const active = document.querySelector('.view.active')?.id
+  if(active === 'view-turbine') updateTurbineView()
+}, 500)
 
 // simple physics loop
 setInterval(()=>{
