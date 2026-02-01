@@ -673,7 +673,8 @@ function attachSlipDropTargets(){
   ;[slipBoard, slipSource, tableCenter].forEach(el => {
     if(!el) return
     // avoid adding duplicate listeners
-    if(el._dropHandlerAttached) return el._dropHandlerAttached = true
+    if(el._dropHandlerAttached) return
+    el._dropHandlerAttached = true
     el.addEventListener('dragover', ev => { ev.preventDefault(); el.classList.add('highlight') })
     el.addEventListener('dragleave', ev => { el.classList.remove('highlight') })
     el.addEventListener('drop', ev => {
@@ -683,14 +684,10 @@ function attachSlipDropTargets(){
       if(node && el !== node.parentElement){
         el.appendChild(node)
         const actions = node.querySelector('.slip-actions')
-          // show actions only when placed on the work table (table-center)
-          if(el.id === 'table-center'){
-            if(actions) actions.style.display = 'flex'
-          } else {
-            if(actions) actions.style.display = 'none'
-          }
-      }
-    })
+        // show actions only when placed on the work table (table-center)
+        if(el.id === 'table-center'){
+          if(actions) actions.style.display = 'flex'
+          log(`Zettel auf Tisch gelegt — zum Abstempeln bereit`)
   })
 }
 attachSlipDropTargets()
@@ -1350,7 +1347,7 @@ function generateRandomSlipContent(i){
   return `<strong>Anfrage ${i}:</strong> ${reason}. Name: ${name}. ${extra}.` 
 }
 
-function generateTableSlips(count = 100){
+function generateTableSlips(count = 20){
   const table = createTableCenterIfMissing()
   if(!table) return
   // clear existing slips in table
@@ -1359,65 +1356,31 @@ function generateTableSlips(count = 100){
   const slipSource = document.getElementById('slip-source')
   if(slipSource) slipSource.innerHTML = '<div class="source-title">Alte Zettel (leer)</div>'
 
-  const placedRects = []
-  const maxAttempts = 200
-  // container size
-  const rect = table.getBoundingClientRect()
-  const W = Math.max(300, rect.width || 700)
-  const H = Math.max(220, rect.height || 320)
-
   for(let i=1;i<=count;i++){
     const slip = document.createElement('div')
     slip.className = 'slip'
     slip.dataset.id = 'T' + i
+    // shorter content for small slips
+    const reasons = ['Wartung','Zugang','Ersatzteile','Masken','Kontrolle']
     slip.innerHTML = `
-      <div class="slip-body">${generateRandomSlipContent(i)}</div>
+      <div class="slip-body"><strong>Anfrage ${i}</strong><br>${reasons[i%reasons.length]}</div>
       <div class="slip-actions" style="display:none">
-        <button class="btn-approve">Approve</button>
-        <button class="btn-deny">Deny</button>
+        <button class="btn-approve" style="padding:2px 4px;font-size:8px">✓</button>
+        <button class="btn-deny" style="padding:2px 4px;font-size:8px">✗</button>
       </div>
       <div class="stamp" aria-hidden="true"></div>
     `
-    // temporarily append invisibly to measure
-    slip.style.visibility = 'hidden'
     table.appendChild(slip)
-    // measure
-    const srect = slip.getBoundingClientRect()
-    const sw = Math.min(220, srect.width || 170)
-    const sh = Math.min(120, srect.height || 80)
-
-    // find a non-overlapping position
-    let placed = false
-    for(let attempt=0; attempt<maxAttempts && !placed; attempt++){
-      const x = Math.floor(Math.random() * Math.max(1, W - sw - 20)) + 10
-      const y = Math.floor(Math.random() * Math.max(1, H - sh - 20)) + 30
-      // check overlap
-      let ok = true
-      for(const r of placedRects){
-        if(!(x + sw < r.x || x > r.x + r.w || y + sh < r.y || y > r.y + r.h)){ ok = false; break }
-      }
-      if(ok){ slip.style.left = x + 'px'; slip.style.top = y + 'px'; placedRects.push({x,y,w:sw,h:sh}); placed = true }
-    }
-    if(!placed){ // fallback: push to grid
-      const gx = 12 + (i%8) * (sw + 8)
-      const gy = 40 + Math.floor(i/8) * (sh + 8)
-      slip.style.left = gx + 'px'; slip.style.top = gy + 'px'
-      placedRects.push({x:gx,y:gy,w:sw,h:sh})
-    }
-    // small random rotation for realism
-    const rot = (Math.random()*30 - 15).toFixed(1)
-    slip.style.transform = `rotate(${rot}deg)`
-    slip.style.visibility = 'visible'
-    // ensure actions hidden initially (only show when dropped into board)
+    // ensure actions hidden initially (only show when on table)
     const actions = slip.querySelector('.slip-actions')
-    if(actions) actions.style.display = 'flex'
+    if(actions) actions.style.display = 'none'
     // wire interactions
     setupSlipInteractions(slip)
   }
 }
 
-// generate 100 slips on load for the security table
-generateTableSlips(100)
+// generate 20 slips on load for the security table
+generateTableSlips(20)
 // attach drop handlers again now that table-center exists
 try{ attachSlipDropTargets() }catch(e){}
     log('SICHERHEIT: Reset-Versuch mit falschem Passwort')

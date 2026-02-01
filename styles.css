@@ -124,11 +124,13 @@ footer{padding:8px 16px;font-size:12px;color:#9aa6b2}
 .table-center .note{position:absolute;left:8px;top:8px;color:#9fb8c4;font-size:12px;pointer-events:none}
 .table-center .slip{position:absolute;width:170px;padding:8px;border-radius:6px;margin:0;box-shadow:0 6px 18px rgba(0,0,0,0.6);cursor:grab;transform-origin:center left;pointer-events:auto}
 .table-center .slip .slip-actions{display:none;position:static;margin-top:8px;pointer-events:auto}
+#table-center .slip-actions{display:flex !important;gap:2px;margin-top:2px}
+#table-center .slip-actions button{flex:1;padding:2px 4px;font-size:8px;pointer-events:auto}
 
 /* Fixed red work table on the left where slips are processed */
-#table-center{position:fixed;left:20px;bottom:80px;width:240px;height:160px;border-radius:8px;padding:10px;background:linear-gradient(180deg,#2b0b0b,#190606);border:2px solid rgba(180,50,50,0.6);box-shadow:0 6px 18px rgba(107,15,15,0.25);z-index:120}
-#table-center .note{color:#ffdede}
-#table-center .slip{width:180px}
+#table-center{position:fixed;left:20px;bottom:80px;width:240px;height:160px;border-radius:8px;padding:10px;background:linear-gradient(180deg,#2b0b0b,#190606);border:2px solid rgba(180,50,50,0.6);box-shadow:0 6px 18px rgba(107,15,15,0.25);z-index:120;overflow:hidden;display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;pointer-events:auto}
+#table-center .note{color:#ffdede;font-size:10px;position:absolute;top:2px;left:4px;pointer-events:none}
+#table-center .slip{position:relative;width:70px;height:50px;font-size:10px;padding:4px;margin:0;flex-shrink:0;transform:none !important;left:auto !important;top:auto !important;pointer-events:auto}
 
 
 /* Views */
