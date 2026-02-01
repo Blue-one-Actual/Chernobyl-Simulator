@@ -713,7 +713,7 @@ let originalTitle = document.title
 let titleFlashTimer = null
 let vibrateTimer = null
 
-function startAlarm(){
+async function startAlarm(){
   if(alarmActive) return
   alarmActive = true
   log('Security Alarm ausgelöst')
@@ -731,6 +731,47 @@ function startAlarm(){
     master.connect(ctx.destination)
     const targetVol = Math.max(0.08, alarmVolume/100 * 1.25)
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
+
+    // If an ArrayBuffer was placed on `window.alarmSampleArrayBuffer`, decode and play it first
+    if(window.alarmSampleArrayBuffer){
+      try{
+        const audioBuf = await ctx.decodeAudioData(window.alarmSampleArrayBuffer.slice(0))
+        const src = ctx.createBufferSource()
+        const sampleG = ctx.createGain()
+        src.buffer = audioBuf; src.loop = true
+        sampleG.gain.value = 0.0001
+        src.connect(sampleG); sampleG.connect(master)
+        src.start()
+        sirenNodes = { sampleSrc: src, sampleG, master }
+        const nowS = ctx.currentTime
+        sampleG.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), nowS + 0.02)
+        return
+      }catch(e){ console.warn('sample decode failed', e) }
+    }
+
+    // If caller provided a sample URL (relative or absolute), try to load and play it as a looping alarm.
+    // Example: in the console set `window.alarmSampleUrl = 'navy_alarm.mp3'` and then trigger the alarm.
+    if(window.alarmSampleUrl){
+      try{
+        const resp = await fetch(window.alarmSampleUrl)
+        if(resp.ok){
+          const ab = await resp.arrayBuffer()
+          const audioBuf = await ctx.decodeAudioData(ab)
+          const src = ctx.createBufferSource()
+          const sampleG = ctx.createGain()
+          src.buffer = audioBuf; src.loop = true
+          sampleG.gain.value = 0.0001
+          src.connect(sampleG); sampleG.connect(master)
+          src.start()
+          // expose nodes so stopAlarm can stop/cleanup
+          sirenNodes = { sampleSrc: src, sampleG, master }
+          // ramp sample gain up
+          const nowS = ctx.currentTime
+          sampleG.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), nowS + 0.02)
+          return
+        }
+      }catch(e){ console.warn('sample load failed', e) }
+    }
 
     // create weighted multi-oscillator stack for a powerful, authoritative tone
     const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(80, ctx.currentTime)
@@ -888,6 +929,28 @@ function snoozeAlarm(seconds = 60){
 document.getElementById('raise-alarm')?.addEventListener('click', ()=> startAlarm())
 document.getElementById('stop-alarm')?.addEventListener('click', ()=> stopAlarm())
 document.getElementById('snooze-alarm')?.addEventListener('click', ()=> snoozeAlarm(60))
+
+// File input handler for local alarm sample
+try{
+  const fileInput = document.getElementById('alarm-file-input')
+  const loadBtn = document.getElementById('alarm-file-load')
+  if(fileInput && loadBtn){
+    loadBtn.addEventListener('click', async ()=>{
+      const f = fileInput.files && fileInput.files[0]
+      if(!f) return log('Keine Datei ausgewählt')
+      log('Lade Alarmdatei: ' + f.name)
+      try{
+        const ab = await f.arrayBuffer()
+        // store the ArrayBuffer on window for startAlarm to decode
+        window.alarmSampleArrayBuffer = ab
+        window.alarmSampleName = f.name
+        log('Alarmdatei bereit — klicke "Alarm auslösen" zum Abspielen')
+      }catch(e){ log('Fehler beim Lesen der Datei') }
+    })
+    // also allow double-click on input to auto-select and prepare
+    fileInput.addEventListener('change', ()=>{})
+  }
+}catch(e){}
 
 // apply manual control: set manual mode and apply slider to control rods
 const applyBtn = document.getElementById('apply-manual')

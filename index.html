@@ -250,6 +250,11 @@
             <button id="raise-alarm" class="danger">Alarm auslösen</button>
             <button id="stop-alarm">Alarm stoppen</button>
             <label class="vol-label">Lautstärke: <input id="alarm-volume" type="range" min="0" max="100" value="30"></label>
+            <div style="margin-top:8px;">
+              <label style="font-size:0.9em;">Lokale Alarmdatei:</label>
+              <input id="alarm-file-input" type="file" accept="audio/*">
+              <button id="alarm-file-load" style="margin-left:6px;">Als Alarm wählen</button>
+            </div>
           </div>
           <div class="security-status">
             <p>Kameras: <strong>Online</strong></p>
