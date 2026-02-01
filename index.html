@@ -10,21 +10,39 @@
   <header>
     <h1>Chernobyl — Kontrollraum (Simulator)</h1>
   </header>
+  <!-- Annunciator panel (warning lamps with Cyrillic labels) -->
+  <div class="annunciator">
+    <div class="annunciator-row">
+      <div class="lamp" data-key="WATER"><span>WASSER</span></div>
+      <div class="lamp" data-key="PRESS"><span>DRUCK</span></div>
+      <div class="lamp" data-key="TEMP"><span>TEMP</span></div>
+      <div class="lamp" data-key="PUMP"><span>PUMPE</span></div>
+      <div class="lamp" data-key="SCRAM"><span>AZ-5</span></div>
+      <div class="lamp" data-key="SEC"><span>SICHERHEIT</span></div>
+    </div>
+  </div>
   <main class="container">
     <nav class="side-menu">
       <ul>
-        <li data-view="reactor" class="active">Reaktor Control</li>
+        <li data-view="reactor" class="active">Reaktorsteuerung</li>
         <li data-view="security">Security Center</li>
-        <li data-view="turbine">Turbine Room</li>
+        <li data-view="control">Chemisches Labor</li>
+        <li data-view="turbine">Turbinenraum</li>
+        <li data-view="generator">Generatorraum</li>
+        <li data-view="pumpenhaus">Pumpenhaus</li>
+        <li data-view="reactorhall">Reaktorhalle</li>
+        <li data-view="brennstofflager">Brennstofflager</li>
+        <li data-view="kantine">Kantine</li>
+        <li data-view="umkleiden">Umkleiden</li>
       </ul>
     </nav>
     <section class="left">
       <div id="view-reactor" class="view active">
       <div class="core-card">
         <div class="card-header">
-          <h2>КЕРНОВЫЙ РЕАКТОР</h2>
-          <div class="hazard-stripe" aria-hidden="true"></div>
-        </div>
+            <h2>Reaktorkern</h2>
+            <div class="hazard-stripe" aria-hidden="true"></div>
+          </div>
         <div class="core-visual">
           <svg id="reactor-mosaic" viewBox="0 0 200 240" preserveAspectRatio="xMidYMid meet" aria-label="Mosaic of reactor cores"></svg>
 
@@ -32,16 +50,38 @@
             <path d="M20 140 A80 80 0 0 1 180 140" fill="none" stroke="#222" stroke-width="12"/>
             <g id="ticks"></g>
             <line id="power-needle" x1="100" y1="140" x2="100" y2="40" stroke="#ffeb3b" stroke-width="4" stroke-linecap="round" transform="rotate(-90 100 140)" />
-            <text x="100" y="154" text-anchor="middle" fill="#c7d2da" font-size="12">Power</text>
+            <text x="100" y="154" text-anchor="middle" fill="#c7d2da" font-size="12">Leistung</text>
           </svg>
         </div>
-
         <div class="indicators">
           <div>Leistung: <span id="power">0</span>%</div>
           <div>Temperatur: <span id="temperature">0</span> °C</div>
           <div>Druck: <span id="pressure">0</span> kPa</div>
         </div>
+
+        <!-- Analog double-needle gauge (pressure + temperature) -->
+        <div class="analog-panel">
+          <svg id="analog-gauge" viewBox="0 0 220 120" class="analog" aria-hidden="true">
+            <rect x="6" y="6" width="208" height="108" rx="6" fill="#071018" stroke="#263238" />
+            <g id="analog-needles">
+              <line id="needle-temp" x1="110" y1="90" x2="110" y2="30" stroke="#ff8a00" stroke-width="3" stroke-linecap="round" transform="rotate(-20 110 90)" />
+              <line id="needle-press" x1="110" y1="90" x2="110" y2="30" stroke="#4dd0e1" stroke-width="2" stroke-linecap="round" transform="rotate(20 110 90)" />
+            </g>
+            <text x="110" y="110" text-anchor="middle" fill="#c7d2da" font-size="11">Temp / Druck</text>
+          </svg>
+        </div>
       </div>
+      </div>
+
+      <!-- removed duplicate security view (right-side panel used for details) -->
+
+      <div id="view-turbine" class="view">
+        <div class="core-card">
+          <div class="card-header"><h2>Turbinenraum</h2></div>
+          <div class="turbine-panel">
+            <p>Aktuelle Drehzahl: <em>siehe Steuerpanel</em></p>
+          </div>
+        </div>
       </div>
 
       <div id="view-security" class="view">
@@ -49,44 +89,378 @@
           <div class="card-header"><h2>Security Center</h2></div>
           <div class="security-panel">
             <p>Überwachungskameras: <strong>Online</strong></p>
-            <ul>
-              <li>Zone A: OK</li>
-              <li>Zone B: OK</li>
-              <li>Zone C: Bewegung erkannt</li>
-            </ul>
-            <button id="raise-alarm">Alarm auslösen</button>
           </div>
         </div>
       </div>
 
-      <div id="view-turbine" class="view">
+      <div id="view-control" class="view">
         <div class="core-card">
-          <div class="card-header"><h2>Turbine Room</h2></div>
-          <div class="turbine-panel">
-            <p>Aktuelle Drehzahl: <span id="rpm">0</span> RPM</p>
-            <button id="turbine-start">Start Turbine</button>
-            <button id="turbine-stop">Stop Turbine</button>
+          <div class="card-header"><h2>Chemisches Labor</h2></div>
+          <div class="panel">
+            <p>Labor-Status: Bereit</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-generator" class="view">
+        <div class="core-card">
+          <div class="card-header"><h2>Generatorraum</h2></div>
+          <div class="panel">
+            <p>Generator-Status: Online</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-pumpenhaus" class="view">
+        <div class="core-card">
+          <div class="card-header"><h2>Pumpenhaus</h2></div>
+          <div class="panel">
+            <p>Pumpen-Status: Aktiv</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-reactorhall" class="view">
+        <div class="core-card">
+          <div class="card-header"><h2>Reaktorhalle</h2></div>
+          <div class="panel">
+            <p>Hallen-Status: Verfügbar</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-brennstofflager" class="view">
+        <div class="core-card">
+          <div class="card-header"><h2>Brennstofflager</h2></div>
+          <div class="panel">
+            <p>Lager-Status: Bestückt</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-kantine" class="view">
+        <div class="core-card">
+          <div class="card-header"><h2>Kantine</h2></div>
+          <div class="panel">
+            <p>Verpflegung: Verfügbar</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-umkleiden" class="view">
+        <div class="core-card">
+          <div class="card-header"><h2>Umkleiden</h2></div>
+          <div class="panel">
+            <p>Schutzausrüstung: Verfügbar</p>
           </div>
         </div>
       </div>
     </section>
 
       <aside class="right">
-      <h2>Steuerung</h2>
+        <div id="right-reactor" class="right-panel">
+          <h2 style="text-align: center; font-family: 'Courier New', monospace; font-size: 1.3em; color: #ff6b35; text-shadow: 0 0 10px #ff6b35;">
+            REAKTORKONTROLLE
+          </h2>
+          
+          <!-- DOSIMETER -->
+          <div class="dosimeter" id="dosimeter">
+            <div class="dosimeter-header">Dosimeter (Sv/h)</div>
+            <div class="dosimeter-readout" id="dosimeter-value">0.2</div>
+            <div class="dosimeter-bar">
+              <div class="dosimeter-fill" id="dosimeter-bar"></div>
+            </div>
+            <div class="dosimeter-labels">
+              <span>0</span>
+              <span>100</span>
+              <span>500</span>
+              <span>MAX</span>
+            </div>
+          </div>
+          
+          <div class="buttons">
+            <button id="start-btn" style="background: #1a472a; border: 2px solid #4ade80;">Start</button>
+            <button id="stop-btn" style="background: #472a1a; border: 2px solid #f97316;">Stop</button>
+          </div>
+          
+          <div class="az5">
+            <div class="cover" id="az5-cover"></div>
+            <button id="az5-button" class="az5-button">AZ-5</button>
+          </div>
+          
+          <label style="font-family: monospace; color: #4ade80;"><input id="cooling" type="checkbox" checked> Kühlung</label>
+          
+          <div class="reactor-controls" style="border: 2px dotted #ff6b35; padding: 8px; margin: 8px 0;">
+            <label style="font-family: monospace; color: #fbbf24;"><input id="manual-mode" type="checkbox"> Manuelle Steuerung</label>
+            <label style="font-family: monospace; color: #a0a0a0;">Leistungsregler: <input id="manual-slider" type="range" min="0" max="100" value="50" style="width: 100%;"></label>
+            <button id="apply-manual" style="background: #374151; border: 1px solid #9ca3af; font-family: monospace;">Anwenden</button>
+            <div class="selsyn-controls">
+              <div class="knob-group">
+                <label style="font-family: monospace; font-size: 0.9em; color: #e5e7eb;">Grob</label>
+                <input id="knob-pump" type="range" min="0" max="100" value="50" style="width: 100%;">
+              </div>
+              <div class="knob-group">
+                <label style="font-family: monospace; font-size: 0.9em; color: #e5e7eb;">Fein</label>
+                <input id="knob-turbine" type="range" min="0" max="100" value="50" style="width: 100%;">
+              </div>
+            </div>
+          </div>
+          
+          <div class="log">
+            <h3>System-Log</h3>
+            <div id="log" class="log-box"></div>
+          </div>
+          
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-reactor">Bereit</span></div>
+            <div class="phone-buttons">
+              <button class="phone-answer-room" data-room="reactor" hidden>Annehmen</button>
+              <button class="phone-hang-room" data-room="reactor" hidden>Auflegen</button>
+            </div>
+          </div>
+          
+          <!-- RESET Button (bottom left) -->
+          <div class="reset-section">
+            <button id="reset-btn" class="reset-btn">Zurücksetzen</button>
+          </div>
+        </div>
 
-      <div class="buttons">
-        <button id="start-btn">Start</button>
-        <button id="stop-btn">Stop</button>
-        <button id="scram-btn" class="danger">EMERGENCY SCRAM</button>
-      </div>
+        <div id="right-security" class="right-panel" hidden>
+          <h2>Security Center</h2>
+          <div id="security-alarm-right" class="alarm-banner" role="status" aria-live="assertive" hidden>
+            <span>ALARM - SICHERHEIT</span>
+          </div>
+          <div class="security-controls">
+            <button id="raise-alarm" class="danger">Alarm auslösen</button>
+            <button id="stop-alarm">Alarm stoppen</button>
+            <label class="vol-label">Lautstärke: <input id="alarm-volume" type="range" min="0" max="100" value="30"></label>
+          </div>
+          <div class="security-status">
+            <p>Kameras: <strong>Online</strong></p>
+          </div>
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-security">Bereit</span></div>
+            <div class="phone-dial">
+              <input id="phone-number" placeholder="Nummer (z.B. 117)" />
+              <button id="phone-call">Anrufen</button>
+            </div>
+            <div class="phone-buttons">
+              <button id="phone-answer" hidden>Annehmen</button>
+              <button id="phone-hang" hidden>Auflegen</button>
+            </div>
+          </div>
 
-      <label><input id="cooling" type="checkbox" checked> Kühlung aktiviert</label>
+          <!-- Drag source (left) and drop target (right) for slips -->
+          <div class="slips" id="security-slips">
+            <h3>Dokumente zum Abstempeln</h3>
+            <div class="slip-board-wrap">
+              <div class="slip-source" id="slip-source">
+                <div class="source-title">Eingang (Zum Bearbeiten ziehen)</div>
+                <div class="slip" data-id="1" draggable="true">
+                  <div class="slip-body">
+                    <strong>Anfrage 1:</strong> Zugang zum Wartungsbereich beantragen. Name: Ivanov. Grund: Ersatzteile.
+                  </div>
+                  <div class="slip-actions" style="display:none">
+                    <button class="btn-approve">Approve</button>
+                    <button class="btn-deny">Deny</button>
+                  </div>
+                  <div class="stamp" aria-hidden="true"></div>
+                </div>
 
-      <div class="log">
-        <h3>System-Log</h3>
-        <div id="log" class="log-box"></div>
-      </div>
-    </aside>
+                <div class="slip" data-id="2" draggable="true">
+                  <div class="slip-body">
+                    <strong>Anfrage 2:</strong> Lieferung Gasmasken an Kantine nötig. Menge: 20.
+                  </div>
+                  <div class="slip-actions" style="display:none">
+                    <button class="btn-approve">Approve</button>
+                    <button class="btn-deny">Deny</button>
+                  </div>
+                  <div class="stamp" aria-hidden="true"></div>
+                </div>
+
+                <div class="slip" data-id="3" draggable="true">
+                  <div class="slip-body">
+                    <strong>Anfrage 3:</strong> Türöffnung Pumpenhaus für Inspektion, Techniker: Petrov.
+                  </div>
+                  <div class="slip-actions" style="display:none">
+                    <button class="btn-approve">Approve</button>
+                    <button class="btn-deny">Deny</button>
+                  </div>
+                  <div class="stamp" aria-hidden="true"></div>
+                </div>
+              </div>
+
+              <div class="slip-target" id="slip-board">
+                <div class="target-title">In Bearbeitung (Zettel ablegen)</div>
+                <!-- Dropped slips will appear here -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="right-control" class="right-panel" hidden>
+          <h2>Chemisches Labor</h2>
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-control">Bereit</span></div>
+            <div class="phone-buttons">
+              <button class="phone-answer-room" data-room="control" hidden>Annehmen</button>
+              <button class="phone-hang-room" data-room="control" hidden>Auflegen</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="right-turbine" class="right-panel" hidden>
+          <h2>Turbinensteuerung</h2>
+          <p>Aktuelle Drehzahl: <span id="rpm">0</span> U/min</p>
+          <div class="buttons">
+            <button id="turbine-start">Turbine starten</button>
+            <button id="turbine-stop">Turbine stoppen</button>
+          </div>
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-turbine">Bereit</span></div>
+            <div class="phone-buttons">
+              <button class="phone-answer-room" data-room="turbine" hidden>Annehmen</button>
+              <button class="phone-hang-room" data-room="turbine" hidden>Auflegen</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="right-generator" class="right-panel" hidden>
+          <h2>Generatorraum</h2>
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-generator">Bereit</span></div>
+            <div class="phone-buttons">
+              <button class="phone-answer-room" data-room="generator" hidden>Annehmen</button>
+              <button class="phone-hang-room" data-room="generator" hidden>Auflegen</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="right-pumpenhaus" class="right-panel" hidden>
+          <h2>Pumpenhaus</h2>
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-pumpenhaus">Bereit</span></div>
+            <div class="phone-buttons">
+              <button class="phone-answer-room" data-room="pumpenhaus" hidden>Annehmen</button>
+              <button class="phone-hang-room" data-room="pumpenhaus" hidden>Auflegen</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="right-reactorhall" class="right-panel" hidden>
+          <h2>Reaktorhalle</h2>
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-reactorhall">Bereit</span></div>
+            <div class="phone-buttons">
+              <button class="phone-answer-room" data-room="reactorhall" hidden>Annehmen</button>
+              <button class="phone-hang-room" data-room="reactorhall" hidden>Auflegen</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="right-brennstofflager" class="right-panel" hidden>
+          <h2>Brennstofflager</h2>
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-brennstofflager">Bereit</span></div>
+            <div class="phone-buttons">
+              <button class="phone-answer-room" data-room="brennstofflager" hidden>Annehmen</button>
+              <button class="phone-hang-room" data-room="brennstofflager" hidden>Auflegen</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="right-kantine" class="right-panel" hidden>
+          <h2>Kantine</h2>
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-kantine">Bereit</span></div>
+            <div class="phone-buttons">
+              <button class="phone-answer-room" data-room="kantine" hidden>Annehmen</button>
+              <button class="phone-hang-room" data-room="kantine" hidden>Auflegen</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="right-umkleiden" class="right-panel" hidden>
+          <h2>Umkleiden</h2>
+          <div class="phone">
+            <div class="phone-display"><span id="phone-status-umkleiden">Bereit</span></div>
+            <div class="phone-buttons">
+              <button class="phone-answer-room" data-room="umkleiden" hidden>Annehmen</button>
+              <button class="phone-hang-room" data-room="umkleiden" hidden>Auflegen</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Room phone list panel -->
+        <div id="room-phones" class="right-panel" hidden>
+          <h3>Räume (Telefon)</h3>
+          <div class="room-list">
+            <div class="phone">
+              <div class="phone-display"><span id="phone-status-security">Bereit</span> <small>Sicherheitszentrale</small></div>
+              <div class="phone-buttons">
+                <button class="phone-answer-room" data-room="security" hidden>Annehmen</button>
+                <button class="phone-hang-room" data-room="security" hidden>Auflegen</button>
+              </div>
+            </div>
+
+            <div class="phone">
+              <div class="phone-display"><span id="phone-status-generator">Bereit</span> <small>Generatorraum</small></div>
+              <div class="phone-buttons">
+                <button class="phone-answer-room" data-room="generator" hidden>Annehmen</button>
+                <button class="phone-hang-room" data-room="generator" hidden>Auflegen</button>
+              </div>
+            </div>
+
+            <div class="phone">
+              <div class="phone-display"><span id="phone-status-control">Bereit</span> <small>Chemisches Labor</small></div>
+              <div class="phone-buttons">
+                <button class="phone-answer-room" data-room="control" hidden>Annehmen</button>
+                <button class="phone-hang-room" data-room="control" hidden>Auflegen</button>
+              </div>
+            </div>
+
+            <div class="phone">
+              <div class="phone-display"><span id="phone-status-kantine">Bereit</span> <small>Kantine</small></div>
+              <div class="phone-buttons">
+                <button class="phone-answer-room" data-room="kantine" hidden>Annehmen</button>
+                <button class="phone-hang-room" data-room="kantine" hidden>Auflegen</button>
+              </div>
+            </div>
+
+            <div class="phone">
+              <div class="phone-display"><span id="phone-status-umkleiden">Bereit</span> <small>Umkleiden</small></div>
+              <div class="phone-buttons">
+                <button class="phone-answer-room" data-room="umkleiden" hidden>Annehmen</button>
+                <button class="phone-hang-room" data-room="umkleiden" hidden>Auflegen</button>
+              </div>
+            </div>
+
+            <div class="phone">
+              <div class="phone-display"><span id="phone-status-reactorhall">Bereit</span> <small>Reaktorhalle</small></div>
+              <div class="phone-buttons">
+                <button class="phone-answer-room" data-room="reactorhall" hidden>Annehmen</button>
+                <button class="phone-hang-room" data-room="reactorhall" hidden>Auflegen</button>
+              </div>
+            </div>
+
+            <div class="phone">
+              <div class="phone-display"><span id="phone-status-pumpenhaus">Bereit</span> <small>Pumpenhaus</small></div>
+              <div class="phone-buttons">
+                <button class="phone-answer-room" data-room="pumpenhaus" hidden>Annehmen</button>
+                <button class="phone-hang-room" data-room="pumpenhaus" hidden>Auflegen</button>
+              </div>
+            </div>
+
+            <div class="phone">
+              <div class="phone-display"><span id="phone-status-brennstofflager">Bereit</span> <small>Brennstofflager</small></div>
+              <div class="phone-buttons">
+                <button class="phone-answer-room" data-room="brennstofflager" hidden>Annehmen</button>
+                <button class="phone-hang-room" data-room="brennstofflager" hidden>Auflegen</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
   </main>
   <footer>
     <small>Nur eine vereinfachte, pädagogische Simulation — nicht für echte Steuerungen.</small>
