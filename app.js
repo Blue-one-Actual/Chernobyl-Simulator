@@ -794,11 +794,9 @@ function startAlarm(){
 
     // Desktop/Mobile: request/resume audio on first user gesture if suspended
     if (audioContext && audioContext.state === 'suspended'){
-      const resumeOnUserGesture = ()=>{
-        audioContext.resume().catch(()=>{})
-        window.removeEventListener('pointerdown', resumeOnUserGesture)
-      }
-      window.addEventListener('pointerdown', resumeOnUserGesture)
+      const resumeOnUserGesture = ()=> audioContext.resume().catch(()=>{})
+      // use once:true so listener is removed automatically and won't interfere with clicks
+      window.addEventListener('pointerdown', resumeOnUserGesture, { once: true })
     }
 
     // Desktop notifications (silent) to alert if tab not visible
@@ -820,6 +818,8 @@ function startAlarm(){
           document.title = document.title === '!!! ALARM !!!' ? originalTitle : '!!! ALARM !!!'
         }, 1000)
       }
+      // ensure the banner doesn't capture pointer events and block the UI
+      try{ const b = document.getElementById('security-alarm-right'); if(b) b.style.pointerEvents = 'none' }catch(e){}
     }catch(e){}
 
     // vibration pattern where supported; use interval to repeat pattern
@@ -839,7 +839,7 @@ function stopAlarm(){
   alarmActive = false
   log('Security Alarm gestoppt')
   const banner = document.getElementById('security-alarm-right')
-  if(banner){ banner.hidden = true; banner.classList.remove('active') }
+  if(banner){ banner.hidden = true; banner.classList.remove('active'); try{ banner.style.pointerEvents = '' }catch(e){} }
   if(alarmVisualInterval){ clearInterval(alarmVisualInterval); alarmVisualInterval = null }
   if(sirenTimer){ clearInterval(sirenTimer); sirenTimer = null }
   if(titleFlashTimer){ clearInterval(titleFlashTimer); titleFlashTimer = null; try{ document.title = originalTitle }catch(e){} }
