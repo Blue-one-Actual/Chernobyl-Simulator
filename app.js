@@ -711,47 +711,24 @@ function startAlarm(){
     const targetVol = Math.max(0.02, alarmVolume/100 * 0.7)
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
-    // main oscillators for siren body
-    // lower base frequencies for a deeper siren
-    const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, ctx.currentTime)
-    const osc2 = ctx.createOscillator(); osc2.type = 'sine'; osc2.frequency.setValueAtTime(700, ctx.currentTime)
-    const oscGain = ctx.createGain(); oscGain.gain.value = 0.5
-    const osc2Gain = ctx.createGain(); osc2Gain.gain.value = 0.45
+    // simple beep oscillator (less annoying)
+    const osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(880, ctx.currentTime)
+    const oscGain = ctx.createGain(); oscGain.gain.value = 0.0001
     osc.connect(oscGain); oscGain.connect(master)
-    osc2.connect(osc2Gain); osc2Gain.connect(master)
+    osc.start()
+    sirenNodes = {osc, oscGain, master}
 
-    // noise layer to make it harsher
-    const bufferSize = ctx.sampleRate * 1.0
-    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
-    const data = noiseBuffer.getChannelData(0)
-    for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2 - 1) * 0.5
-    const noiseSrc = ctx.createBufferSource(); noiseSrc.buffer = noiseBuffer; noiseSrc.loop = true
-    const noiseFilter = ctx.createBiquadFilter(); noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 600; noiseFilter.Q.value = 0.8
-    const noiseGain = ctx.createGain(); noiseGain.gain.value = 0.03
-    noiseSrc.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(master)
-
-    osc.start(); osc2.start(); noiseSrc.start()
-    sirenNodes = {osc, osc2, noiseSrc, master, oscGain, osc2Gain, noiseGain, noiseFilter}
-
-    // realtime control will be handled by a global listener (outside)
-
-    // frequency sweep using a timed loop for smooth modulation
-    const rate = 0.25 // Hz for sweep (longer cycles)
-    const fMid = 360
-    const fAmp = 240
-    const startTime = ctx.currentTime
+    // periodic short beeps (play ~120ms beep every 600ms)
+    const beepInterval = 600
     sirenTimer = setInterval(()=>{
-      const t = ctx.currentTime - startTime
-      const angle = 2 * Math.PI * rate * t
-      const f1 = fMid + fAmp * Math.sin(angle)
-      const f2 = f1 * 1.9
-      osc.frequency.setValueAtTime(f1, ctx.currentTime)
-      osc2.frequency.setValueAtTime(f2, ctx.currentTime)
-      // subtle amplitude modulation
-      master.gain.setValueAtTime(0.5 + 0.15 * Math.abs(Math.sin(angle)), ctx.currentTime)
-      // move noise filter slightly (lower center)
-      noiseFilter.frequency.setValueAtTime(600 + 300 * (0.5 + 0.5 * Math.sin(angle)), ctx.currentTime)
-    }, 40)
+      try{
+        const now = ctx.currentTime
+        oscGain.gain.cancelScheduledValues(now)
+        oscGain.gain.setValueAtTime(0.0001, now)
+        oscGain.gain.exponentialRampToValueAtTime(1.0, now + 0.01)
+        oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12)
+      }catch(e){}
+    }, beepInterval)
   }catch(e){
     console.error('Audio failed', e)
   }
@@ -766,9 +743,13 @@ function stopAlarm(){
   if(alarmVisualInterval){ clearInterval(alarmVisualInterval); alarmVisualInterval = null }
   if(sirenTimer){ clearInterval(sirenTimer); sirenTimer = null }
   if(sirenNodes){
-    try{ sirenNodes.osc.stop(); sirenNodes.osc.disconnect() }catch(e){}
-    try{ sirenNodes.osc2.stop(); sirenNodes.osc2.disconnect() }catch(e){}
-    try{ sirenNodes.noiseSrc.stop(); sirenNodes.noiseSrc.disconnect() }catch(e){}
+    try{
+      Object.values(sirenNodes).forEach(n=>{
+        if(!n) return
+        try{ if(typeof n.stop === 'function') n.stop() }catch(e){}
+        try{ if(typeof n.disconnect === 'function') n.disconnect() }catch(e){}
+      })
+    }catch(e){}
     sirenNodes = null
   }
   if(audioContext){ audioContext.close(); audioContext = null }
