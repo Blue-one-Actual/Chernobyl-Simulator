@@ -854,6 +854,21 @@ async function startAlarm(){
       }catch(e){ console.warn('sample load failed', e) }
     }
 
+    // If a custom alarm factory is registered on window, use it (factory should return {start, stop})
+    if(typeof window.customAlarmFactory === 'function'){
+      try{
+        const controller = window.customAlarmFactory(ctx, master)
+        if(controller && typeof controller.start === 'function'){
+          // allow start to be async
+          const maybeNodes = await controller.start()
+          // store controller so stopAlarm can call controller.stop()
+          sirenNodes = Object.assign({}, maybeNodes || {}, { customController: controller })
+          log('Custom alarm gestartet')
+          return
+        }
+      }catch(e){ console.warn('custom alarm failed', e) }
+    }
+
     // create weighted multi-oscillator stack for a powerful, authoritative tone
     const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(80, ctx.currentTime)
     const low = ctx.createOscillator(); low.type = 'sine'; low.frequency.setValueAtTime(220, ctx.currentTime)
@@ -1038,6 +1053,34 @@ try{
     fileInput.addEventListener('change', ()=>{})
   }
 }catch(e){}
+
+// If user pasted a short alarm snippet, provide a wrapped factory for convenience.
+// This uses the user's pattern (square oscillator, quick decay) and exposes start/stop.
+if(!window.customAlarmFactory){
+  window.customAlarmFactory = function(audioCtx, masterGain){
+    let osc = null, gain = null
+    return {
+      start(){
+        try{
+          osc = audioCtx.createOscillator()
+          gain = audioCtx.createGain()
+          osc.type = 'square'
+          osc.frequency.setValueAtTime(450, audioCtx.currentTime)
+          gain.gain.setValueAtTime(1, audioCtx.currentTime)
+          // quick decay as in user's snippet
+          gain.gain.setTargetAtTime(0, audioCtx.currentTime + 0.5, 0.01)
+          osc.connect(gain); gain.connect(masterGain)
+          osc.start()
+          return { osc, gain }
+        }catch(e){ console.warn('custom factory start failed', e) }
+      },
+      stop(){
+        try{ if(osc && typeof osc.stop === 'function') osc.stop() }catch(e){}
+        try{ if(gain && typeof gain.disconnect === 'function') gain.disconnect() }catch(e){}
+      }
+    }
+  }
+}
 
 // apply manual control: set manual mode and apply slider to control rods
 const applyBtn = document.getElementById('apply-manual')
