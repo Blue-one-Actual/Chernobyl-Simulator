@@ -619,6 +619,12 @@ function playStampSound(){
 function stampSlip(slipEl, status){
   if(slipEl.classList.contains('approved') || slipEl.classList.contains('denied')) return
   const id = slipEl.dataset.id || '??'
+  // only allow stamping when the slip is on the work table (table-center)
+  const parentId = slipEl.parentElement && slipEl.parentElement.id
+  if(parentId !== 'table-center'){
+    log(`Stamping blocked: Slip #${id} must be on the Tischmitte to stamp`)
+    return
+  }
   slipEl.classList.remove('approved','denied')
   slipEl.classList.add(status)
   const stamp = slipEl.querySelector('.stamp')
@@ -632,13 +638,15 @@ function stampSlip(slipEl, status){
   // disable buttons
   slipEl.querySelectorAll('button').forEach(b=>b.disabled = true)
   log(`Security: Slip #${id} ${status.toUpperCase()}`)
-  // move finalized slip to the processing board on the right
+  // move finalized slip to the processing board on the right (storage area)
   try{
     const board = document.getElementById('slip-board')
-    if(board && slipEl.parentElement !== board){
+    if(board){
       board.appendChild(slipEl)
       const actions = slipEl.querySelector('.slip-actions')
       if(actions) actions.style.display = 'none'
+      // fully disable interactive buttons for stored slips
+      slipEl.querySelectorAll('button').forEach(b=>{ b.disabled = true; b.style.opacity = 0.6 })
     }
   }catch(e){console.warn('move stamped slip failed', e)}
 }
@@ -675,12 +683,12 @@ function attachSlipDropTargets(){
       if(node && el !== node.parentElement){
         el.appendChild(node)
         const actions = node.querySelector('.slip-actions')
-        // show actions on table center or processing board
-        if(el.id === 'slip-board' || el.id === 'table-center'){
-          if(actions) actions.style.display = 'flex'
-        } else {
-          if(actions) actions.style.display = 'none'
-        }
+          // show actions only when placed on the work table (table-center)
+          if(el.id === 'table-center'){
+            if(actions) actions.style.display = 'flex'
+          } else {
+            if(actions) actions.style.display = 'none'
+          }
       }
     })
   })
@@ -1315,8 +1323,7 @@ function setupSlipInteractions(slip){
 }
 
 function createTableCenterIfMissing(){
-  const secPanel = document.querySelector('#view-security .security-panel')
-  if(!secPanel) return null
+  // place the table center as a fixed red-styled work table on the left side of the screen
   let table = document.getElementById('table-center')
   if(table) return table
   table = document.createElement('div')
@@ -1324,10 +1331,8 @@ function createTableCenterIfMissing(){
   table.className = 'table-center'
   const note = document.createElement('div'); note.className = 'note'; note.textContent = 'Tischmitte: Lege die Blätter hier ab';
   table.appendChild(note)
-  // insert table before the existing slip-board-wrap so UI still shows right box
-  const slipsWrap = secPanel.querySelector('.slip-board-wrap')
-  if(slipsWrap) secPanel.insertBefore(table, slipsWrap)
-  else secPanel.appendChild(table)
+  // append to body so it stays visually at the left (red area) regardless of active view
+  document.body.appendChild(table)
   return table
 }
 
