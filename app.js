@@ -731,9 +731,10 @@ function startAlarm(){
     // create weighted multi-oscillator stack for a powerful, authoritative tone
     const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(55, ctx.currentTime)
     const low = ctx.createOscillator(); low.type = 'sine'; low.frequency.setValueAtTime(110, ctx.currentTime)
-    const body = ctx.createOscillator(); body.type = 'sawtooth'; body.frequency.setValueAtTime(220, ctx.currentTime)
-    // high treble layer to add a shrill edge
-    const screech = ctx.createOscillator(); screech.type = 'triangle'; screech.frequency.setValueAtTime(1200, ctx.currentTime)
+    // base voices (both lowered by 25%)
+    const body = ctx.createOscillator(); body.type = 'sawtooth'; body.frequency.setValueAtTime(165, ctx.currentTime)
+    // high treble layer to add a shrill edge (lowered)
+    const screech = ctx.createOscillator(); screech.type = 'triangle'; screech.frequency.setValueAtTime(900, ctx.currentTime)
 
     const subG = ctx.createGain(); subG.gain.value = 0.0001
     const lowG = ctx.createGain(); lowG.gain.value = 0.0001
@@ -765,9 +766,10 @@ function startAlarm(){
 
     // pulsed pattern: two short beeps then a longer pause (user-specified)
     // pattern: beep1 0.4s, pause 0.1s, beep2 0.4s, pause 5s => total cycle 5900ms
-    const cycleMs = 5900
-    const beep1 = { duration: 0.4, freqMul: 1.0 }
-    const beep2 = { duration: 0.4, freqMul: 1.08 }
+    // doubled durations for beeps and short pause; final pause stays 5s
+    const cycleMs = 6800
+    const beep1 = { duration: 0.8, freqMul: 1.0 }
+    const beep2 = { duration: 0.8, freqMul: 1.08 }
 
     function schedulePulse(offsetSec, spec){
       try{
@@ -818,7 +820,7 @@ function startAlarm(){
     // schedule the two beeps each cycle; run immediately and then on interval
     const scheduleCycle = ()=>{
       schedulePulse(0, beep1)
-      schedulePulse(beep1.duration + 0.1, beep2)
+      schedulePulse(beep1.duration + 0.2, beep2)
     }
     scheduleCycle()
     sirenTimer = setInterval(scheduleCycle, cycleMs)
