@@ -731,23 +731,26 @@ function startAlarm(){
     // create weighted multi-oscillator stack for a powerful, authoritative tone
     const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(55, ctx.currentTime)
     const low = ctx.createOscillator(); low.type = 'sine'; low.frequency.setValueAtTime(110, ctx.currentTime)
-    // base voices (both lowered by 25%)
-    const body = ctx.createOscillator(); body.type = 'sawtooth'; body.frequency.setValueAtTime(165, ctx.currentTime)
-    // high treble layer to add a shrill edge (lowered)
-    const screech = ctx.createOscillator(); screech.type = 'triangle'; screech.frequency.setValueAtTime(900, ctx.currentTime)
+    // base voices: lower further for a mighty low-end
+    const body = ctx.createOscillator(); body.type = 'sawtooth'; body.frequency.setValueAtTime(82, ctx.currentTime)
+    // high treble layer (lowered) for texture
+    const screech = ctx.createOscillator(); screech.type = 'triangle'; screech.frequency.setValueAtTime(450, ctx.currentTime)
+    // very high peal for shrill metallic accent
+    const peal = ctx.createOscillator(); peal.type = 'sine'; peal.frequency.setValueAtTime(3000, ctx.currentTime)
 
     const subG = ctx.createGain(); subG.gain.value = 0.0001
     const lowG = ctx.createGain(); lowG.gain.value = 0.0001
     const bodyG = ctx.createGain(); bodyG.gain.value = 0.0001
     const screechG = ctx.createGain(); screechG.gain.value = 0.0001
+    const pealG = ctx.createGain(); pealG.gain.value = 0.0001
 
-    sub.connect(subG); low.connect(lowG); body.connect(bodyG); screech.connect(screechG)
+    sub.connect(subG); low.connect(lowG); body.connect(bodyG); screech.connect(screechG); peal.connect(pealG)
 
     // mild punch filter and gentle compression for 'mighty' presence
     const punch = ctx.createBiquadFilter(); punch.type = 'lowpass'; punch.frequency.value = 4000
     const comp = ctx.createDynamicsCompressor(); comp.threshold.setValueAtTime(-12, ctx.currentTime); comp.ratio.setValueAtTime(8, ctx.currentTime); comp.attack.setValueAtTime(0.01, ctx.currentTime); comp.release.setValueAtTime(0.25, ctx.currentTime)
 
-    subG.connect(punch); lowG.connect(punch); bodyG.connect(punch); screechG.connect(punch)
+    subG.connect(punch); lowG.connect(punch); bodyG.connect(punch); screechG.connect(punch); pealG.connect(punch)
     punch.connect(comp); comp.connect(master)
 
     // subtle noise layer for realism
@@ -760,9 +763,9 @@ function startAlarm(){
     const noiseG = ctx.createGain(); noiseG.gain.value = 0.0001
     noiseSrc.connect(noiseF); noiseF.connect(noiseG); noiseG.connect(master)
 
-    sub.start(); low.start(); body.start(); screech.start(); noiseSrc.start()
+    sub.start(); low.start(); body.start(); screech.start(); peal.start(); noiseSrc.start()
 
-    sirenNodes = {sub, low, body, screech, subG, lowG, bodyG, screechG, noiseSrc, noiseG, punch, comp, master}
+    sirenNodes = {sub, low, body, screech, peal, subG, lowG, bodyG, screechG, pealG, noiseSrc, noiseG, punch, comp, master}
 
     // pulsed pattern: two short beeps then a longer pause (user-specified)
     // pattern: beep1 0.4s, pause 0.1s, beep2 0.4s, pause 5s => total cycle 5900ms
