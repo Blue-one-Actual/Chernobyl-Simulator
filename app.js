@@ -869,6 +869,27 @@ document.getElementById('raise-alarm')?.addEventListener('click', ()=> startAlar
 document.getElementById('stop-alarm')?.addEventListener('click', ()=> stopAlarm())
 document.getElementById('snooze-alarm')?.addEventListener('click', ()=> snoozeAlarm(60))
 
+// apply manual control: set manual mode and apply slider to control rods
+const applyBtn = document.getElementById('apply-manual')
+if(applyBtn){
+  applyBtn.addEventListener('click', ()=>{
+    const manualCheckbox = document.getElementById('manual-mode')
+    const slider = document.getElementById('manual-slider')
+    if(!manualCheckbox || !slider) return
+    state.manualMode = manualCheckbox.checked
+    const val = Number(slider.value)
+    // only apply rods position when manual mode enabled
+    if(state.manualMode){
+      state.rods = Math.max(0, Math.min(100, val))
+      log(`Manuelle Steuerung: Kontrollstäbe auf ${Math.round(state.rods)}% gesetzt`)
+      updateRodsVisual()
+      updateUI()
+    } else {
+      log('Manuelle Steuerung ist deaktiviert. Aktivieren, um Änderungen anzuwenden.')
+    }
+  })
+}
+
 // periodically update turbine rpm while view is visible
 setInterval(()=>{
   const active = document.querySelector('.view.active')?.id

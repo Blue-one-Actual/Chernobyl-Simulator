@@ -156,8 +156,8 @@ footer{padding:8px 16px;font-size:12px;color:#9aa6b2}
 .hazard-square{position:absolute;inset:-12px;border-radius:50%;background:transparent;transform:none;opacity:1;border:8px solid transparent;box-shadow:0 10px 30px rgba(0,0,0,0.6);pointer-events:none;border-image:repeating-linear-gradient(90deg,#ffed4d 0 12px,#222 12px 24px) 1 round}
 .az5-big-button{position:relative;z-index:30;width:110px;height:110px;border-radius:50%;border:4px solid #5b0b0b;background:#9a0f0f;color:#fff;font-weight:800;font-size:16px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,0.5)}
 .az5-big-button:active{transform:translateY(2px)}
-.az5-cover-large{position:absolute;z-index:70;width:128px;height:128px;border-radius:50%;left:50%;top:14px;transform:translateX(-50%);background:rgba(255,255,255,0.06);backdrop-filter:blur(0.6px);-webkit-backdrop-filter:blur(0.6px);border:2px solid rgba(255,255,255,0.06);pointer-events:auto;transition:transform 260ms cubic-bezier(.2,.9,.3,1), opacity 160ms}
-.az5-cover-large.open{transform:translateX(-50%) translateY(-140px);opacity:1}
+.az5-cover-large{position:absolute;z-index:70;width:128px;height:128px;border-radius:50%;left:50%;top:14px;transform:translateX(-50%);background:rgba(255,255,255,0.06);backdrop-filter:blur(0.6px);-webkit-backdrop-filter:blur(0.6px);border:2px solid rgba(255,255,255,0.06);pointer-events:none;transition:transform 260ms cubic-bezier(.2,.9,.3,1), opacity 160ms}
+.az5-cover-large.open{transform:translateX(-50%) translateY(-140px);opacity:1;pointer-events:auto}
 
 /* legacy small AZ5 (kept minimal) */
 .az5{display:inline-block;position:relative;margin-top:10px}
