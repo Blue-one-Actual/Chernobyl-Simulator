@@ -13,11 +13,8 @@
 body{margin:0;background:linear-gradient(180deg,var(--bg) 0%, #071613 70%);color:var(--muted);position:relative;overflow-x:hidden}
 
 /* subtle grain texture */
-body::after{
-	content:'';position:fixed;inset:0;pointer-events:none;opacity:0.06;mix-blend-mode:overlay;
-	background-image:repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, rgba(0,0,0,0.02) 0 1px, transparent 1px 6px);
-	z-index:0;display:block
-}
+/* grain overlay temporarily disabled to avoid intercepting clicks during layout tweaks */
+body::after{ display:none }
 
 /* ensure UI sits above subtle overlay so clicks work reliably */
 .container{position:relative;z-index:10}
