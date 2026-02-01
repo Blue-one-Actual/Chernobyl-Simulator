@@ -759,31 +759,33 @@ function startAlarm(){
     const noiseG = ctx.createGain(); noiseG.gain.value = 0.0001
     noiseSrc.connect(noiseF); noiseF.connect(noiseG); noiseG.connect(master)
 
-    sub.start(); low.start(); body.start(); noiseSrc.start()
+    sub.start(); low.start(); body.start(); screech.start(); noiseSrc.start()
 
     sirenNodes = {sub, low, body, screech, subG, lowG, bodyG, screechG, noiseSrc, noiseG, punch, comp, master}
 
-    // pulsed pattern: stronger pulse (~500ms) every ~600ms (faster)
-    const pulseInterval = 600
-    sirenTimer = setInterval(()=>{
+    // pulsed pattern: two short beeps then a longer pause (user-specified)
+    // pattern: beep1 0.4s, pause 0.1s, beep2 0.4s, pause 5s => total cycle 5900ms
+    const cycleMs = 5900
+    const beep1 = { duration: 0.4, freqMul: 1.0 }
+    const beep2 = { duration: 0.4, freqMul: 1.08 }
+
+    function schedulePulse(offsetSec, spec){
       try{
-        const now = ctx.currentTime
+        const now = ctx.currentTime + offsetSec
         const vol = Math.max(0.08, alarmVolume/100 * 1.25)
-        // quick attack, sustain, then release (slightly longer sustain for gravity)
         const attack = 0.02
-        const sustain = 0.44
-        const release = 0.24
+        const sustain = Math.max(0, spec.duration - attack - 0.02)
+        const release = 0.02
 
         ;[subG, lowG, bodyG].forEach((g, idx)=>{
           g.gain.cancelScheduledValues(now)
           g.gain.setValueAtTime(0.0001, now)
-          // stronger weighting for sub and low for power
           const mult = idx===0? 1.6 : (idx===1? 1.0 : 0.9)
           g.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * mult), now + attack)
           g.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
         })
 
-        // shrill treble pulse
+        // screech
         try{
           screechG.gain.cancelScheduledValues(now)
           screechG.gain.setValueAtTime(0.0001, now)
@@ -791,15 +793,35 @@ function startAlarm(){
           screechG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
         }catch(e){}
 
-        // slight body frequency modulation for urgency
-        try{ body.frequency.cancelScheduledValues(now); body.frequency.setValueAtTime(220, now); body.frequency.linearRampToValueAtTime(260, now + attack + sustain*0.5); body.frequency.linearRampToValueAtTime(220, now + attack + sustain + release) }catch(e){}
+        // frequency shift for body + screech (slightly higher for second beep)
+        try{
+          body.frequency.cancelScheduledValues(now)
+          body.frequency.setValueAtTime(220 * spec.freqMul, now)
+          body.frequency.linearRampToValueAtTime(220 * spec.freqMul * 1.05, now + attack + sustain*0.5)
+          body.frequency.linearRampToValueAtTime(220 * spec.freqMul, now + attack + sustain + release)
+        }catch(e){}
+        try{
+          screech.frequency.cancelScheduledValues(now)
+          screech.frequency.setValueAtTime(1200 * spec.freqMul, now)
+          screech.frequency.linearRampToValueAtTime(1200 * spec.freqMul * 1.02, now + attack + sustain*0.5)
+          screech.frequency.linearRampToValueAtTime(1200 * spec.freqMul, now + attack + sustain + release)
+        }catch(e){}
 
+        // noise texture
         noiseG.gain.cancelScheduledValues(now)
         noiseG.gain.setValueAtTime(0.0001, now)
         noiseG.gain.exponentialRampToValueAtTime(Math.max(0.001, vol * 0.09), now + 0.01)
         noiseG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
-      }catch(e){ console.error('pulse failed', e) }
-    }, pulseInterval)
+      }catch(e){ console.error('schedulePulse failed', e) }
+    }
+
+    // schedule the two beeps each cycle; run immediately and then on interval
+    const scheduleCycle = ()=>{
+      schedulePulse(0, beep1)
+      schedulePulse(beep1.duration + 0.1, beep2)
+    }
+    scheduleCycle()
+    sirenTimer = setInterval(scheduleCycle, cycleMs)
 
     // Desktop/Mobile: request/resume audio on first user gesture if suspended
     if (audioContext && audioContext.state === 'suspended'){
