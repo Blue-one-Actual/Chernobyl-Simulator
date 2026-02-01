@@ -114,14 +114,12 @@ const stopBtn = el('stop-btn')
   }catch(e){
     console.error('Audio failed', e)
   }
-    needle.setAttribute('transform', `rotate(${angle} 100 140)`)
-  }
-  // update analog needles
-  updateAnalogNeedles()
-  // update dosimeter
-  updateDosimeter()
-  // update control rod visual
-  updateRodsVisual()
+
+function updateAnalogNeedles(){
+  const needle = document.getElementById('power-needle')
+  if(!needle) return
+  const angle = Math.max(-90, Math.min(90, (state.power/100)*180 - 90))
+  needle.setAttribute('transform', `rotate(${angle} 100 140)`)
 }
 
 function updateRodsVisual(){
