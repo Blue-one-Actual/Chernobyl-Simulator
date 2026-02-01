@@ -767,66 +767,46 @@ function startAlarm(){
 
     sirenNodes = {sub, low, body, screech, peal, subG, lowG, bodyG, screechG, pealG, noiseSrc, noiseG, punch, comp, master}
 
-    // pulsed pattern: two short beeps then a longer pause (user-specified)
-    // pattern: beep1 0.4s, pause 0.1s, beep2 0.4s, pause 5s => total cycle 5900ms
-    // doubled durations for beeps and short pause; final pause stays 5s
-    const cycleMs = 6800
-    const beep1 = { duration: 0.8, freqMul: 1.0 }
-    const beep2 = { duration: 0.8, freqMul: 1.08 }
+    // Continuous LFO-driven wail (mechanical/electronic civil-defense style)
+    // Use a slow LFO to sweep the principal oscillators for a classic wail.
+    try{
+      const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.setValueAtTime(0.32, ctx.currentTime)
+      const lfoG = ctx.createGain(); lfoG.gain.value = 220 // sweep depth in Hz
+      lfo.connect(lfoG)
+      // apply sweep to main voices
+      lfoG.connect(body.frequency)
+      lfoG.connect(screech.frequency)
+      // smaller sweep for peal to keep it metallic
+      const lfoG2 = ctx.createGain(); lfoG2.gain.value = 180
+      lfo.connect(lfoG2); lfoG2.connect(peal.frequency)
+      lfo.start()
 
-    function schedulePulse(offsetSec, spec){
+      // make body and screech more 'mechanical' (triangle-like harmonics)
+      try{ body.type = 'triangle' }catch(e){}
+      try{ screech.type = 'sawtooth' }catch(e){}
+
+      // add slight distortion for grit (local waveshaper)
       try{
-        const now = ctx.currentTime + offsetSec
-        const vol = Math.max(0.08, alarmVolume/100 * 1.25)
-        const attack = 0.02
-        const sustain = Math.max(0, spec.duration - attack - 0.02)
-        const release = 0.02
+        const curve = new Float32Array(44100)
+        for(let i=0;i<44100;i++){ const x = i*2/44100-1; curve[i] = Math.tanh(x*6) }
+        const sh = ctx.createWaveShaper(); sh.curve = curve; sh.oversample = '2x'
+        // insert shaper between punch and comp
+        punch.disconnect(); punch.connect(sh); sh.connect(comp)
+      }catch(e){}
 
-        ;[subG, lowG, bodyG].forEach((g, idx)=>{
-          g.gain.cancelScheduledValues(now)
-          g.gain.setValueAtTime(0.0001, now)
-          const mult = idx===0? 1.6 : (idx===1? 1.0 : 0.9)
-          g.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * mult), now + attack)
-          g.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
-        })
+      // sustain the voices at a steady gated level for a continuous wail
+      const now = ctx.currentTime
+      const vol = Math.max(0.12, alarmVolume/100 * 1.4)
+      ;[subG, lowG, bodyG, screechG, pealG].forEach((g, idx)=>{
+        try{ g.gain.cancelScheduledValues(now) }catch(e){}
+        g.gain.setValueAtTime(0.0001, now)
+        const mult = idx===0? 2.0 : (idx===1? 1.6 : (idx===2? 1.2 : (idx===3? 0.9 : 0.6)))
+        g.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * mult), now + 0.02)
+      })
 
-        // screech
-        try{
-          screechG.gain.cancelScheduledValues(now)
-          screechG.gain.setValueAtTime(0.0001, now)
-          screechG.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * 0.8), now + attack)
-          screechG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
-        }catch(e){}
-
-        // frequency shift for body + screech (slightly higher for second beep)
-        try{
-          body.frequency.cancelScheduledValues(now)
-          body.frequency.setValueAtTime(220 * spec.freqMul, now)
-          body.frequency.linearRampToValueAtTime(220 * spec.freqMul * 1.05, now + attack + sustain*0.5)
-          body.frequency.linearRampToValueAtTime(220 * spec.freqMul, now + attack + sustain + release)
-        }catch(e){}
-        try{
-          screech.frequency.cancelScheduledValues(now)
-          screech.frequency.setValueAtTime(1200 * spec.freqMul, now)
-          screech.frequency.linearRampToValueAtTime(1200 * spec.freqMul * 1.02, now + attack + sustain*0.5)
-          screech.frequency.linearRampToValueAtTime(1200 * spec.freqMul, now + attack + sustain + release)
-        }catch(e){}
-
-        // noise texture
-        noiseG.gain.cancelScheduledValues(now)
-        noiseG.gain.setValueAtTime(0.0001, now)
-        noiseG.gain.exponentialRampToValueAtTime(Math.max(0.001, vol * 0.09), now + 0.01)
-        noiseG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
-      }catch(e){ console.error('schedulePulse failed', e) }
-    }
-
-    // schedule the two beeps each cycle; run immediately and then on interval
-    const scheduleCycle = ()=>{
-      schedulePulse(0, beep1)
-      schedulePulse(beep1.duration + 0.2, beep2)
-    }
-    scheduleCycle()
-    sirenTimer = setInterval(scheduleCycle, cycleMs)
+      // no sirenTimer interval needed for continuous wail; keep reference so stopAlarm can clear
+      sirenTimer = null
+    }catch(e){ console.error('wail setup failed', e) }
 
     // Desktop/Mobile: request/resume audio on first user gesture if suspended
     if (audioContext && audioContext.state === 'suspended'){
