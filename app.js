@@ -1,7 +1,7 @@
 // Vereinfachte pädagogische Simulation des Kontrollraums
 const state = {
-  // Removed rod-based control; placeholder `manualControl` for future control implementation
-  manualControl: 50, // 0..100, currently unused
+  // Kontrollstäbe (0..100) - 0 = komplett heraus, 100 = komplett eingefahren
+  rods: 50,
   manualMode: false,
   cooling: true,
   running: false,
@@ -40,18 +40,27 @@ if(manualModeEl){
   manualModeEl.addEventListener('change', e=>{
     state.manualMode = e.target.checked
     log(`Manuelle Steuerung ${state.manualMode? 'aktiv' : 'aus'}`)
+    if(state.manualMode){
+      // when entering manual mode, map rods -> power
+      state.power = Math.max(0, 100 - state.rods)
+      updateUI()
+    }
   })
 }
 if(manualSlider){
   manualSlider.addEventListener('input', e=>{
-    state.manualControl = Number(e.target.value)
+    state.rods = Number(e.target.value)
+    updateRodsVisual()
+    if(state.manualMode){
+      state.power = Math.max(0, 100 - state.rods)
+      updateUI()
+    }
   })
 }
 if(applyManual){
   applyManual.addEventListener('click', ()=>{
-    state.power = Number(state.manualControl)
     state.running = true
-    log(`Manuelle Leistung gesetzt: ${state.manualControl}%`)
+    log('Manueller Modus angewendet')
   })
 }
 
@@ -94,7 +103,18 @@ function updateUI(){
   updateAnalogNeedles()
   // update dosimeter
   updateDosimeter()
-  // no control rods to render
+  // update control rod visual
+  updateRodsVisual()
+}
+
+function updateRodsVisual(){
+  const rodsEl = document.getElementById('control-rods')
+  const rodValue = document.getElementById('rod-value')
+  if(rodValue) rodValue.textContent = `${Math.round(state.rods)}%`
+  if(rodsEl){
+    // height represents how far the rods are inserted (100% -> fully inserted)
+    rodsEl.style.height = `${state.rods}%`
+  }
 }
 
 // --- DOSIMETER: update radiation readout based on power & temperature ---
@@ -177,6 +197,7 @@ function renderMosaic(count = 161){
 
 // call mosaic on load and when power changes
 renderMosaic(161)
+updateRodsVisual()
 
 // --- View switching logic ---
 function switchView(name){
@@ -261,8 +282,8 @@ function stopAnnunciatorTone(){
 Object.keys(annunciators).forEach(k=> setAnnunciator(k,'ok'))
 
 // --- AZ-5 emergency (glass cover + heavy button) ---
-const az5Cover = document.getElementById('az5-cover')
-const az5Button = document.getElementById('az5-button')
+const az5Cover = document.getElementById('az5-cover-large')
+const az5Button = document.getElementById('az5-button-large')
 let az5Open = false
 if(az5Cover) az5Cover.addEventListener('click', ()=>{ az5Open = !az5Open; az5Cover.classList.toggle('open', az5Open) })
 if(az5Button){
@@ -288,7 +309,7 @@ function triggerAZ5(){
 
   // immediate SCRAM behavior: cut power, stop reactor, play insertion hum
   state.running = false
-  state.manualControl = 0
+  state.rods = 100
   // animate rapid power drop
   const startP = state.power
   const callBus = {
@@ -764,10 +785,10 @@ setInterval(()=>{
 
 // simple physics loop
 setInterval(()=>{
-  // determine reactivity: manual mode uses manualControl, otherwise running drives reactivity
+  // determine reactivity: manual mode uses control rod position (less reactivity when rods inserted)
   let reactivity = 0
   if(state.manualMode){
-    reactivity = state.manualControl/100
+    reactivity = (100 - state.rods) / 100
   } else {
     reactivity = state.running ? 0.85 : 0
   }
@@ -790,7 +811,7 @@ setInterval(()=>{
   // safety checks
   if(state.temp > 600){
     // catastrophic threshold — force SCRAM and warn
-    state.manualControl = 0
+    state.rods = 100
     state.running = false
     log('ALARM: Temperatur kritisch — SCRAM ausgelöst')
   } else if(state.temp > 400){
@@ -804,7 +825,7 @@ setInterval(()=>{
 // initial render
 cooling.checked = state.cooling
 updateUI()
-log('Simulator geladen (ohne Regelstab-UI)')
+log('Simulator geladen')
 
 // --- RESET Button with password (4532) ---
 document.getElementById('reset-btn')?.addEventListener('click', ()=>{
@@ -941,7 +962,7 @@ generateTableSlips(100)
   state.dosage = 0.2
   state.running = false
   state.manualMode = false
-  state.manualControl = 50
+  state.rods = 50
   state.cooling = true
   cooling.checked = true
   document.getElementById('manual-mode').checked = false
