@@ -707,28 +707,67 @@ function startAlarm(){
     const master = ctx.createGain()
     master.gain.setValueAtTime(0.0001, ctx.currentTime)
     master.connect(ctx.destination)
-    // use global alarmVolume (0..100 -> 0..0.7)
-    const targetVol = Math.max(0.02, alarmVolume/100 * 0.7)
+    const targetVol = Math.max(0.02, alarmVolume/100 * 0.8)
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
-    // simple beep oscillator (less annoying)
-    const osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(880, ctx.currentTime)
-    const oscGain = ctx.createGain(); oscGain.gain.value = 0.0001
-    osc.connect(oscGain); oscGain.connect(master)
-    osc.start()
-    sirenNodes = {osc, oscGain, master}
+    // create weighted multi-oscillator stack for a powerful, authoritative tone
+    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(55, ctx.currentTime)
+    const low = ctx.createOscillator(); low.type = 'sine'; low.frequency.setValueAtTime(110, ctx.currentTime)
+    const body = ctx.createOscillator(); body.type = 'sawtooth'; body.frequency.setValueAtTime(220, ctx.currentTime)
 
-    // periodic short beeps (play ~120ms beep every 600ms)
-    const beepInterval = 600
+    const subG = ctx.createGain(); subG.gain.value = 0.0001
+    const lowG = ctx.createGain(); lowG.gain.value = 0.0001
+    const bodyG = ctx.createGain(); bodyG.gain.value = 0.0001
+
+    sub.connect(subG); low.connect(lowG); body.connect(bodyG)
+
+    // mild punch filter and gentle compression for 'mighty' presence
+    const punch = ctx.createBiquadFilter(); punch.type = 'lowpass'; punch.frequency.value = 3000
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.setValueAtTime(-18, ctx.currentTime); comp.ratio.setValueAtTime(6, ctx.currentTime)
+
+    subG.connect(punch); lowG.connect(punch); bodyG.connect(punch)
+    punch.connect(comp); comp.connect(master)
+
+    // subtle noise layer for realism
+    const bufferSize = Math.floor(ctx.sampleRate * 0.5)
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+    const data = noiseBuffer.getChannelData(0)
+    for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2 - 1) * 0.3
+    const noiseSrc = ctx.createBufferSource(); noiseSrc.buffer = noiseBuffer; noiseSrc.loop = true
+    const noiseF = ctx.createBiquadFilter(); noiseF.type = 'bandpass'; noiseF.frequency.value = 1500; noiseF.Q.value = 0.7
+    const noiseG = ctx.createGain(); noiseG.gain.value = 0.0001
+    noiseSrc.connect(noiseF); noiseF.connect(noiseG); noiseG.connect(master)
+
+    sub.start(); low.start(); body.start(); noiseSrc.start()
+
+    sirenNodes = {sub, low, body, subG, lowG, bodyG, noiseSrc, noiseG, punch, comp, master}
+
+    // pulsed pattern: strong pulse (~400ms) every ~900ms
+    const pulseInterval = 900
     sirenTimer = setInterval(()=>{
       try{
         const now = ctx.currentTime
-        oscGain.gain.cancelScheduledValues(now)
-        oscGain.gain.setValueAtTime(0.0001, now)
-        oscGain.gain.exponentialRampToValueAtTime(1.0, now + 0.01)
-        oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12)
-      }catch(e){}
-    }, beepInterval)
+        const vol = Math.max(0.02, alarmVolume/100 * 0.8)
+        // quick attack, sustain, then release
+        const attack = 0.02
+        const sustain = 0.36
+        const release = 0.22
+
+        ;[subG, lowG, bodyG].forEach((g, idx)=>{
+          g.gain.cancelScheduledValues(now)
+          g.gain.setValueAtTime(0.0001, now)
+          // weight different oscillators
+          const mult = idx===0? 1.0 : (idx===1? 0.85 : 0.6)
+          g.gain.exponentialRampToValueAtTime(Math.max(0.001, vol * mult), now + attack)
+          g.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
+        })
+
+        noiseG.gain.cancelScheduledValues(now)
+        noiseG.gain.setValueAtTime(0.0001, now)
+        noiseG.gain.exponentialRampToValueAtTime(Math.max(0.0005, vol * 0.06), now + 0.01)
+        noiseG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
+      }catch(e){ console.error('pulse failed', e) }
+    }, pulseInterval)
   }catch(e){
     console.error('Audio failed', e)
   }
