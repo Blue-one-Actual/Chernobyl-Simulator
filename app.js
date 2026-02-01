@@ -659,6 +659,7 @@ document.addEventListener('dragstart', ev => {
   draggingSlip = s
   try{ ev.dataTransfer.setData('text/plain', s.dataset.id || '') }catch(e){}
   s.classList.add('dragging')
+  log(`Zettel ${s.dataset.id} wird gezogen`)
 })
 document.addEventListener('dragend', ev => {
   const s = ev.target.closest && ev.target.closest('.slip')
@@ -1330,6 +1331,7 @@ function createTableCenterIfMissing(){
   table.appendChild(note)
   // append to body so it stays visually at the left (red area) regardless of active view
   document.body.appendChild(table)
+  log('Tisch-Center erstellt')
   return table
 }
 
