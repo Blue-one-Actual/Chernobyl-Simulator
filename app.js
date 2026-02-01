@@ -1,7 +1,7 @@
 // Vereinfachte pädagogische Simulation des Kontrollraums
 const state = {
-  // Removed rod-based control; placeholder `manualControl` for future control implementation
-  manualControl: 50, // 0..100, currently unused
+  // Kontrollstäbe (0..100) - 0 = komplett heraus, 100 = komplett eingefahren
+  rods: 50,
   manualMode: false,
   cooling: true,
   running: false,
@@ -22,79 +22,118 @@ function log(msg){
 const cooling = el('cooling')
 const startBtn = el('start-btn')
 const stopBtn = el('stop-btn')
-const powerEl = el('power')
-const tempEl = el('temperature')
-const pressureEl = el('pressure')
-const coreGlow = el('core-glow')
-const rodsGroup = el('control-rods')
+  try{
+    audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    const ctx = audioContext
 
-// alarm volume default (declared before any handlers)
-let alarmVolume = 30 // UI-controlled volume (0..100)
+    // master gain (volume controllable) - make alarm notably loud
+    const master = ctx.createGain()
+    master.gain.setValueAtTime(0.0001, ctx.currentTime)
+    master.connect(ctx.destination)
+    const targetVol = Math.max(0.12, alarmVolume/100 * 1.2)
+    master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
-// Reactor manual control elements
-const manualModeEl = el('manual-mode')
-const manualSlider = el('manual-slider')
-const applyManual = el('apply-manual')
+    // CORE: two main oscillators for soviet-style wail + low sub for weight
+    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(40, ctx.currentTime)
+    const main1 = ctx.createOscillator(); main1.type = 'triangle'; main1.frequency.setValueAtTime(220, ctx.currentTime)
+    const main2 = ctx.createOscillator(); main2.type = 'sawtooth'; main2.frequency.setValueAtTime(320, ctx.currentTime)
 
-if(manualModeEl){
-  manualModeEl.addEventListener('change', e=>{
-    state.manualMode = e.target.checked
-    log(`Manuelle Steuerung ${state.manualMode? 'aktiv' : 'aus'}`)
-  })
-}
-if(manualSlider){
-  manualSlider.addEventListener('input', e=>{
-    state.manualControl = Number(e.target.value)
-  })
-}
-if(applyManual){
-  applyManual.addEventListener('click', ()=>{
-    state.power = Number(state.manualControl)
-    state.running = true
-    log(`Manuelle Leistung gesetzt: ${state.manualControl}%`)
-  })
-}
+    const subG = ctx.createGain(); subG.gain.value = 0.0001
+    const m1G = ctx.createGain(); m1G.gain.value = 0.0001
+    const m2G = ctx.createGain(); m2G.gain.value = 0.0001
 
-cooling.addEventListener('change', e => {
-  state.cooling = e.target.checked
-  log(`Kühlung ${state.cooling? 'an' : 'aus'}`)
-})
+    sub.connect(subG); main1.connect(m1G); main2.connect(m2G)
 
-startBtn.addEventListener('click', ()=>{
-  state.running = true
-  log('Reaktorbetrieb: START')
-})
-stopBtn.addEventListener('click', ()=>{
-  state.running = false
-  log('Reaktorbetrieb: STOP')
-})
+    // slight waveshaper for gritty industrial tone
+    function makeDistortion(amount){
+      const curve = new Float32Array(44100)
+      const k = typeof amount === 'number' ? amount : 50
+      const deg = Math.PI / 180
+      for (let i = 0; i < 44100; ++i) {
+        const x = i * 2 / 44100 - 1
+        curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x))
+      }
+      const sh = ctx.createWaveShaper(); sh.curve = curve; sh.oversample = '2x'
+      return sh
+    }
+    const shaper = makeDistortion(8)
 
-// SCRAM button removed from UI; use AZ-5 to trigger emergency shutdown
+    // filtering and compression for a large PA feel
+    const lowpass = ctx.createBiquadFilter(); lowpass.type = 'lowpass'; lowpass.frequency.value = 4000
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.setValueAtTime(-10, ctx.currentTime); comp.ratio.setValueAtTime(10, ctx.currentTime); comp.attack.setValueAtTime(0.005, ctx.currentTime); comp.release.setValueAtTime(0.2, ctx.currentTime)
 
-// draw control rods (visual only)
-// control rods removed; visual will be reworked separately
+    subG.connect(shaper); m1G.connect(shaper); m2G.connect(shaper)
+    shaper.connect(lowpass); lowpass.connect(comp); comp.connect(master)
 
-function updateUI(){
-  powerEl.textContent = Math.round(state.power)
-  tempEl.textContent = Math.round(state.temp)
-  pressureEl.textContent = state.pressure.toFixed(1)
-  coreGlow.setAttribute('opacity', Math.min(0.9, 0.12 + state.power/110))
-  // shift color from yellow -> orange -> red as power rises
-  if(state.power > 80) coreGlow.setAttribute('fill', '#ff3b3b')
-  else if(state.power > 50) coreGlow.setAttribute('fill', '#ff8a00')
-  else coreGlow.setAttribute('fill', '#ffd54f')
-  
-  // rotate power gauge needle: map 0..100 -> -90..+90
-  const needle = document.getElementById('power-needle')
-  if(needle){
-    const angle = (state.power/100) * 180 - 90
-    needle.setAttribute('transform', `rotate(${angle} 100 140)`)
+    // noise layer (metallic) for realism
+    const bufferSize = Math.floor(ctx.sampleRate * 0.6)
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+    const ndata = noiseBuffer.getChannelData(0)
+    for(let i=0;i<bufferSize;i++) ndata[i] = (Math.random()*2 - 1) * 0.5
+    const noiseSrc = ctx.createBufferSource(); noiseSrc.buffer = noiseBuffer; noiseSrc.loop = true
+    const noiseF = ctx.createBiquadFilter(); noiseF.type = 'bandpass'; noiseF.frequency.value = 1400; noiseF.Q.value = 0.8
+    const noiseG = ctx.createGain(); noiseG.gain.value = 0.0001
+    noiseSrc.connect(noiseF); noiseF.connect(noiseG); noiseG.connect(master)
+
+    // start oscillators
+    sub.start(); main1.start(); main2.start(); noiseSrc.start()
+
+    sirenNodes = {sub, main1, main2, subG, m1G, m2G, shaper, lowpass, comp, noiseSrc, noiseG, master}
+
+    // Sweep LFO to create wail (modulates frequencies)
+    const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.setValueAtTime(0.45, ctx.currentTime)
+    const lfoG = ctx.createGain(); lfoG.gain.value = 65
+    lfo.connect(lfoG)
+    lfoG.connect(main1.frequency); lfoG.connect(main2.frequency)
+    lfo.start()
+
+    // Continuous sustain: steady LFO-driven wail (matches continuous alarm clip)
+    // Increase LFO rate/depth for a more urgent sweep and bring voice gains
+    lfo.frequency.setValueAtTime(0.6, ctx.currentTime)
+    lfoG.gain.setValueAtTime(90, ctx.currentTime)
+
+    const now = ctx.currentTime
+    const attack = 0.02
+    const vol = Math.max(0.12, alarmVolume/100 * 1.2)
+
+    // ramp to a steady sustain level (no pulsed gating)
+    subG.gain.cancelScheduledValues(now)
+    subG.gain.setValueAtTime(0.0001, now)
+    subG.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * 1.8), now + attack)
+
+    m1G.gain.cancelScheduledValues(now)
+    m1G.gain.setValueAtTime(0.0001, now)
+    m1G.gain.exponentialRampToValueAtTime(Math.max(0.003, vol * 1.2), now + attack)
+
+    m2G.gain.cancelScheduledValues(now)
+    m2G.gain.setValueAtTime(0.0001, now)
+    m2G.gain.exponentialRampToValueAtTime(Math.max(0.0025, vol * 1.0), now + attack)
+
+    noiseG.gain.cancelScheduledValues(now)
+    noiseG.gain.setValueAtTime(0.0001, now)
+    noiseG.gain.exponentialRampToValueAtTime(Math.max(0.0012, vol * 0.1), now + attack)
+
+    // no periodic timer for continuous mode
+    sirenTimer = null
+  }catch(e){
+    console.error('Audio failed', e)
   }
-  // update analog needles
-  updateAnalogNeedles()
-  // update dosimeter
-  updateDosimeter()
-  // no control rods to render
+
+function updateAnalogNeedles(){
+  const needle = document.getElementById('power-needle')
+  if(!needle) return
+  const angle = Math.max(-90, Math.min(90, (state.power/100)*180 - 90))
+  needle.setAttribute('transform', `rotate(${angle} 100 140)`)
+}
+
+function updateRodsVisual(){
+  const rodsEl = document.getElementById('control-rods')
+  const rodValue = document.getElementById('rod-value')
+  if(rodValue) rodValue.textContent = `${Math.round(state.rods)}%`
+  if(rodsEl){
+    // height represents how far the rods are inserted (100% -> fully inserted)
+    rodsEl.style.height = `${state.rods}%`
+  }
 }
 
 // --- DOSIMETER: update radiation readout based on power & temperature ---
@@ -177,6 +216,7 @@ function renderMosaic(count = 161){
 
 // call mosaic on load and when power changes
 renderMosaic(161)
+updateRodsVisual()
 
 // --- View switching logic ---
 function switchView(name){
@@ -261,8 +301,8 @@ function stopAnnunciatorTone(){
 Object.keys(annunciators).forEach(k=> setAnnunciator(k,'ok'))
 
 // --- AZ-5 emergency (glass cover + heavy button) ---
-const az5Cover = document.getElementById('az5-cover')
-const az5Button = document.getElementById('az5-button')
+const az5Cover = document.getElementById('az5-cover-large')
+const az5Button = document.getElementById('az5-button-large')
 let az5Open = false
 if(az5Cover) az5Cover.addEventListener('click', ()=>{ az5Open = !az5Open; az5Cover.classList.toggle('open', az5Open) })
 if(az5Button){
@@ -288,7 +328,7 @@ function triggerAZ5(){
 
   // immediate SCRAM behavior: cut power, stop reactor, play insertion hum
   state.running = false
-  state.manualControl = 0
+  state.rods = 100
   // animate rapid power drop
   const startP = state.power
   const callBus = {
@@ -669,8 +709,91 @@ let alarmVisualInterval = null
 let sirenTimer = null
 let audioContext = null
 let sirenNodes = null
+let originalTitle = document.title
+let titleFlashTimer = null
+let vibrateTimer = null
 
-function startAlarm(){
+async function analyzeSampleParams(arrayBuffer, ctx){
+  try{
+    const audioBuf = await ctx.decodeAudioData(arrayBuffer.slice(0))
+    const fs = audioBuf.sampleRate
+    const chan = audioBuf.numberOfChannels>0? audioBuf.getChannelData(0) : audioBuf.getChannelData(0)
+    // limit to first 5 seconds for analysis
+    const maxSamples = Math.min(chan.length, fs * 5)
+    const data = chan.subarray(0, maxSamples)
+
+    // compute simple envelope with 50ms hop
+    const hop = Math.floor(fs * 0.05)
+    const env = []
+    for(let i=0;i<data.length;i+=hop){
+      let sum = 0
+      const end = Math.min(i+hop, data.length)
+      for(let j=i;j<end;j++) sum += Math.abs(data[j])
+      env.push(sum / (end - i + 1e-9))
+    }
+
+    // autocorrelation on envelope to find modulation period (LFO)
+    function autoCorr(arr, maxLag){
+      const n = arr.length
+      const out = new Float32Array(maxLag+1)
+      for(let lag=0; lag<=maxLag; lag++){
+        let s = 0
+        for(let i=0;i+lag<n;i++) s += arr[i]*arr[i+lag]
+        out[lag] = s
+      }
+      return out
+    }
+    const maxLag = Math.min( Math.floor(env.length/2), Math.floor(5 / 0.05) )
+    const corr = autoCorr(env, maxLag)
+    // ignore lag 0, find peak between 1..maxLag
+    let bestLag = 1, bestVal = -Infinity
+    for(let lag=1; lag<=maxLag; lag++){
+      if(corr[lag] > bestVal){ bestVal = corr[lag]; bestLag = lag }
+    }
+    const lfoRate = 1 / (bestLag * 0.05) // Hz
+
+    // find approximate fundamental using autocorrelation on waveform
+    const minF = 40, maxF = 5000
+    const minLag = Math.floor(fs / maxF)
+    const maxLag2 = Math.floor(fs / minF)
+    let fund = 0
+    let best = 0
+    for(let lag=minLag; lag<=maxLag2; lag+=1){
+      let s = 0
+      for(let i=0;i+lag< data.length && i<100000; i++) s += data[i]*data[i+lag]
+      if(s > best){ best = s; fund = lag }
+    }
+    const fundHz = fund>0 ? fs / fund : 300
+
+    // Goertzel-like energy check for a set of candidate bins
+    const candidates = [80,160,320,640,1280,2560,5120]
+    const energies = {}
+    for(const f of candidates){
+      const k = Math.round( (f / fs) * data.length )
+      // simple DFT bin estimate
+      let re=0, im=0
+      for(let n=0;n<data.length;n+=Math.max(1, Math.floor(data.length/4096))){
+        const phi = 2*Math.PI*k*n/data.length
+        re += data[n] * Math.cos(phi)
+        im -= data[n] * Math.sin(phi)
+      }
+      energies[f] = re*re + im*im
+    }
+    // pick strongest high and mid bins
+    const sorted = Object.keys(energies).sort((a,b)=> energies[b]-energies[a])
+    const top = sorted.map(Number)
+    const bodyFreq = fundHz
+    const screechFreq = top.find(x=> x>200) || top[0] || 800
+    const pealFreq = top.find(x=> x>=2000) || top[0] || 3000
+    // derive depth from spectral spread
+    const lfoDepth = Math.max(50, Math.min(2000, Math.abs(screechFreq - bodyFreq) * 0.6))
+    const noiseRatio = (energies[1280] + energies[2560] + energies[5120]) / (energies[80] + energies[160] + 1)
+
+    return { lfoRate: Math.max(0.15, Math.min(2.5, lfoRate)), lfoDepth, bodyFreq: Math.max(60, Math.min(2000, bodyFreq)), screechFreq, pealFreq, noiseRatio }
+  }catch(e){ console.warn('analyze failed', e); return null }
+}
+
+async function startAlarm(){
   if(alarmActive) return
   alarmActive = true
   log('Security Alarm ausgelöst')
@@ -686,51 +809,263 @@ function startAlarm(){
     const master = ctx.createGain()
     master.gain.setValueAtTime(0.0001, ctx.currentTime)
     master.connect(ctx.destination)
-    // use global alarmVolume (0..100 -> 0..0.7)
-    const targetVol = Math.max(0.02, alarmVolume/100 * 0.7)
+    const targetVol = Math.max(0.08, alarmVolume/100 * 1.25)
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
-    // main oscillators for siren body
-    // lower base frequencies for a deeper siren
-    const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, ctx.currentTime)
-    const osc2 = ctx.createOscillator(); osc2.type = 'sine'; osc2.frequency.setValueAtTime(700, ctx.currentTime)
-    const oscGain = ctx.createGain(); oscGain.gain.value = 0.5
-    const osc2Gain = ctx.createGain(); osc2Gain.gain.value = 0.45
-    osc.connect(oscGain); oscGain.connect(master)
-    osc2.connect(osc2Gain); osc2Gain.connect(master)
+    // Helper: play the alarm once (supports uploaded ArrayBuffer, blob URL, sample URL, custom factory, or synth beep)
+    const repeatMs = (window.alarmRepeatIntervalSeconds || 2.5) * 1000
+    const activePlayHandles = []
 
-    // noise layer to make it harsher
-    const bufferSize = ctx.sampleRate * 1.0
+    async function playOnce(){
+      // if there's an ArrayBuffer upload, decode and play that once
+      try{
+        if(window.alarmSampleArrayBuffer){
+          const audioBuf = await ctx.decodeAudioData(window.alarmSampleArrayBuffer.slice(0))
+          const src = ctx.createBufferSource(); src.buffer = audioBuf; src.loop = false
+          const g = ctx.createGain(); g.gain.value = 0.0001
+          src.connect(g); g.connect(master)
+          src.start()
+          // store to allow stopping
+          activePlayHandles.push({ type: 'buffer', src, g })
+          g.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), ctx.currentTime + 0.02)
+          // remove handle when ended
+          src.onended = ()=>{
+            const idx = activePlayHandles.findIndex(h=>h.src===src)
+            if(idx!==-1) activePlayHandles.splice(idx,1)
+          }
+          log(`Alarm: MP3 spielt einmal — ${window.alarmSampleName || 'uploaded sample'}`)
+          return
+        }
+      }catch(e){ console.warn('sample playback failed', e) }
+
+      // if blob URL exists, use HTMLAudio as fallback
+      try{
+        if(window.alarmSampleBlobUrl){
+          const audio = new Audio(window.alarmSampleBlobUrl)
+          audio.loop = false
+          audio.volume = Math.min(1, (alarmVolume||30)/100)
+          audio.play().catch(()=>{})
+          activePlayHandles.push({ type: 'audio', audio })
+          audio.addEventListener('ended', ()=>{
+            const idx = activePlayHandles.findIndex(h=>h.audio===audio)
+            if(idx!==-1) activePlayHandles.splice(idx,1)
+          })
+          log('Alarm: Blob-URL wird einmal abgespielt')
+          return
+        }
+      }catch(e){ console.warn('blob playback failed', e) }
+
+      // if a sample URL is provided, fetch decode and play once
+      try{
+        if(window.alarmSampleUrl){
+          const resp = await fetch(window.alarmSampleUrl)
+          if(resp.ok){
+            const ab = await resp.arrayBuffer()
+            const audioBuf = await ctx.decodeAudioData(ab)
+            const src = ctx.createBufferSource(); src.buffer = audioBuf; src.loop = false
+            const g = ctx.createGain(); g.gain.value = 0.0001
+            src.connect(g); g.connect(master); src.start()
+            activePlayHandles.push({ type: 'buffer', src, g })
+            g.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), ctx.currentTime + 0.02)
+            src.onended = ()=>{ const idx = activePlayHandles.findIndex(h=>h.src===src); if(idx!==-1) activePlayHandles.splice(idx,1) }
+            log('Alarm: URL-Sample spielt einmal')
+            return
+          }
+        }
+      }catch(e){ console.warn('sample URL playback failed', e) }
+
+      // if custom factory exists, start it and schedule stop after 1s (factory may implement its own decay)
+      try{
+        if(typeof window.customAlarmFactory === 'function'){
+          const controller = window.customAlarmFactory(ctx, master)
+          if(controller && typeof controller.start === 'function'){
+            const maybe = await controller.start()
+            activePlayHandles.push({ type: 'custom', controller })
+            // schedule stop in ~1s if factory has stop
+            setTimeout(()=>{ try{ if(controller && typeof controller.stop === 'function') controller.stop(); }catch(e){} }, 1000)
+            log('Alarm: Custom factory Einmalruf')
+            return
+          }
+        }
+      }catch(e){ console.warn('custom play failed', e) }
+
+      // fallback: create a short synthesized beep (one-shot)
+      try{
+        const o = ctx.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(450, ctx.currentTime)
+        const g = ctx.createGain(); g.gain.value = 0.0001
+        o.connect(g); g.connect(master)
+        o.start()
+        g.gain.exponentialRampToValueAtTime(Math.max(0.002, targetVol * 0.8), ctx.currentTime + 0.01)
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8)
+        setTimeout(()=>{ try{ o.stop() }catch(e){} }, 900)
+        activePlayHandles.push({ type: 'buffer', src: o, g })
+        log('Alarm: Synth-Einmalton')
+      }catch(e){ console.error('fallback beep failed', e) }
+    }
+
+    // play immediately once, then schedule repeats every `repeatMs` milliseconds
+    try{ await playOnce() }catch(e){ console.warn('initial playOnce failed', e) }
+    if(repeatMs > 0){
+      if(sirenTimer) clearInterval(sirenTimer)
+      sirenTimer = setInterval(()=>{ try{ playOnce() }catch(e){ console.warn('repeated play failed', e) } }, repeatMs)
+    }
+
+    // If caller provided a sample URL (relative or absolute), try to load and play it as a looping alarm.
+    // Example: in the console set `window.alarmSampleUrl = 'navy_alarm.mp3'` and then trigger the alarm.
+    if(window.alarmSampleUrl){
+      try{
+        const resp = await fetch(window.alarmSampleUrl)
+        if(resp.ok){
+          const ab = await resp.arrayBuffer()
+          const audioBuf = await ctx.decodeAudioData(ab)
+          const src = ctx.createBufferSource()
+          const sampleG = ctx.createGain()
+          src.buffer = audioBuf; src.loop = true
+          sampleG.gain.value = 0.0001
+          src.connect(sampleG); sampleG.connect(master)
+          src.start()
+          // expose nodes so stopAlarm can stop/cleanup
+          sirenNodes = { sampleSrc: src, sampleG, master }
+          // ramp sample gain up
+          const nowS = ctx.currentTime
+          sampleG.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), nowS + 0.02)
+          return
+        }
+      }catch(e){ console.warn('sample load failed', e) }
+    }
+
+    // If a custom alarm factory is registered on window, use it (factory should return {start, stop})
+    if(typeof window.customAlarmFactory === 'function'){
+      try{
+        const controller = window.customAlarmFactory(ctx, master)
+        if(controller && typeof controller.start === 'function'){
+          // allow start to be async
+          const maybeNodes = await controller.start()
+          // store controller so stopAlarm can call controller.stop()
+          sirenNodes = Object.assign({}, maybeNodes || {}, { customController: controller })
+          log('Custom alarm gestartet')
+          return
+        }
+      }catch(e){ console.warn('custom alarm failed', e) }
+    }
+
+    // create weighted multi-oscillator stack for a powerful, authoritative tone
+    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(80, ctx.currentTime)
+    const low = ctx.createOscillator(); low.type = 'sine'; low.frequency.setValueAtTime(220, ctx.currentTime)
+    // base voices: raised for a much higher wail
+    const body = ctx.createOscillator(); body.type = 'sawtooth'; body.frequency.setValueAtTime(320, ctx.currentTime)
+    // high treble layer (raised) for brighter texture
+    const screech = ctx.createOscillator(); screech.type = 'triangle'; screech.frequency.setValueAtTime(1350, ctx.currentTime)
+    // very high peal for shrill metallic accent (raised)
+    const peal = ctx.createOscillator(); peal.type = 'sine'; peal.frequency.setValueAtTime(4800, ctx.currentTime)
+
+    const subG = ctx.createGain(); subG.gain.value = 0.0001
+    const lowG = ctx.createGain(); lowG.gain.value = 0.0001
+    const bodyG = ctx.createGain(); bodyG.gain.value = 0.0001
+    const screechG = ctx.createGain(); screechG.gain.value = 0.0001
+    const pealG = ctx.createGain(); pealG.gain.value = 0.0001
+
+    sub.connect(subG); low.connect(lowG); body.connect(bodyG); screech.connect(screechG); peal.connect(pealG)
+
+    // mild punch filter and gentle compression for 'mighty' presence
+    const punch = ctx.createBiquadFilter(); punch.type = 'lowpass'; punch.frequency.value = 4000
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.setValueAtTime(-12, ctx.currentTime); comp.ratio.setValueAtTime(8, ctx.currentTime); comp.attack.setValueAtTime(0.01, ctx.currentTime); comp.release.setValueAtTime(0.25, ctx.currentTime)
+
+    subG.connect(punch); lowG.connect(punch); bodyG.connect(punch); screechG.connect(punch); pealG.connect(punch)
+    punch.connect(comp); comp.connect(master)
+
+    // subtle noise layer for realism
+    const bufferSize = Math.floor(ctx.sampleRate * 0.5)
     const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
     const data = noiseBuffer.getChannelData(0)
-    for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2 - 1) * 0.5
+    for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2 - 1) * 0.3
     const noiseSrc = ctx.createBufferSource(); noiseSrc.buffer = noiseBuffer; noiseSrc.loop = true
-    const noiseFilter = ctx.createBiquadFilter(); noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 600; noiseFilter.Q.value = 0.8
-    const noiseGain = ctx.createGain(); noiseGain.gain.value = 0.03
-    noiseSrc.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(master)
+    const noiseF = ctx.createBiquadFilter(); noiseF.type = 'bandpass'; noiseF.frequency.value = 1500; noiseF.Q.value = 0.7
+    const noiseG = ctx.createGain(); noiseG.gain.value = 0.0001
+    noiseSrc.connect(noiseF); noiseF.connect(noiseG); noiseG.connect(master)
 
-    osc.start(); osc2.start(); noiseSrc.start()
-    sirenNodes = {osc, osc2, noiseSrc, master, oscGain, osc2Gain, noiseGain, noiseFilter}
+    sub.start(); low.start(); body.start(); screech.start(); peal.start(); noiseSrc.start()
 
-    // realtime control will be handled by a global listener (outside)
+    sirenNodes = {sub, low, body, screech, peal, subG, lowG, bodyG, screechG, pealG, noiseSrc, noiseG, punch, comp, master}
 
-    // frequency sweep using a timed loop for smooth modulation
-    const rate = 0.25 // Hz for sweep (longer cycles)
-    const fMid = 360
-    const fAmp = 240
-    const startTime = ctx.currentTime
-    sirenTimer = setInterval(()=>{
-      const t = ctx.currentTime - startTime
-      const angle = 2 * Math.PI * rate * t
-      const f1 = fMid + fAmp * Math.sin(angle)
-      const f2 = f1 * 1.9
-      osc.frequency.setValueAtTime(f1, ctx.currentTime)
-      osc2.frequency.setValueAtTime(f2, ctx.currentTime)
-      // subtle amplitude modulation
-      master.gain.setValueAtTime(0.5 + 0.15 * Math.abs(Math.sin(angle)), ctx.currentTime)
-      // move noise filter slightly (lower center)
-      noiseFilter.frequency.setValueAtTime(600 + 300 * (0.5 + 0.5 * Math.sin(angle)), ctx.currentTime)
-    }, 40)
+    // Continuous LFO-driven wail (mechanical/electronic civil-defense style)
+    // Use a slow LFO to sweep the principal oscillators for a classic wail.
+    try{
+      const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.setValueAtTime(0.6, ctx.currentTime)
+      const lfoG = ctx.createGain(); lfoG.gain.value = 420 // sweep depth in Hz (increased for higher center)
+      lfo.connect(lfoG)
+      // apply sweep to main voices
+      lfoG.connect(body.frequency)
+      lfoG.connect(screech.frequency)
+      // smaller sweep for peal to keep it metallic
+      const lfoG2 = ctx.createGain(); lfoG2.gain.value = 360
+      lfo.connect(lfoG2); lfoG2.connect(peal.frequency)
+      lfo.start()
+
+      // make body and screech more 'mechanical' (triangle-like harmonics)
+      try{ body.type = 'triangle' }catch(e){}
+      try{ screech.type = 'sawtooth' }catch(e){}
+
+      // add slight distortion for grit (local waveshaper)
+      try{
+        const curve = new Float32Array(44100)
+        for(let i=0;i<44100;i++){ const x = i*2/44100-1; curve[i] = Math.tanh(x*6) }
+        const sh = ctx.createWaveShaper(); sh.curve = curve; sh.oversample = '2x'
+        // insert shaper between punch and comp
+        punch.disconnect(); punch.connect(sh); sh.connect(comp)
+      }catch(e){}
+
+      // sustain the voices at a steady gated level for a continuous wail
+      const now = ctx.currentTime
+      const vol = Math.max(0.12, alarmVolume/100 * 1.4)
+      ;[subG, lowG, bodyG, screechG, pealG].forEach((g, idx)=>{
+        try{ g.gain.cancelScheduledValues(now) }catch(e){}
+        g.gain.setValueAtTime(0.0001, now)
+        const mult = idx===0? 2.0 : (idx===1? 1.6 : (idx===2? 1.2 : (idx===3? 0.9 : 0.6)))
+        g.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * mult), now + 0.02)
+      })
+
+      // no sirenTimer interval needed for continuous wail; keep reference so stopAlarm can clear
+      sirenTimer = null
+    }catch(e){ console.error('wail setup failed', e) }
+
+    // Desktop/Mobile: request/resume audio on first user gesture if suspended
+    if (audioContext && audioContext.state === 'suspended'){
+      const resumeOnUserGesture = ()=> audioContext.resume().catch(()=>{})
+      // use once:true so listener is removed automatically and won't interfere with clicks
+      window.addEventListener('pointerdown', resumeOnUserGesture, { once: true })
+    }
+
+    // Desktop notifications (silent) to alert if tab not visible
+    try{
+      if('Notification' in window){
+        if(Notification.permission === 'granted'){
+          new Notification('Security Alarm', { body: 'Sicherheitsalarm ausgelöst!', silent: true })
+        } else if(Notification.permission === 'default'){
+          Notification.requestPermission().then(p=>{ if(p === 'granted') new Notification('Security Alarm', { body: 'Sicherheitsalarm ausgelöst!', silent: true }) })
+        }
+      }
+    }catch(e){}
+
+    // flash document title to draw attention
+    try{
+      if(!titleFlashTimer){
+        originalTitle = document.title || 'Simulator'
+        titleFlashTimer = setInterval(()=>{
+          document.title = document.title === '!!! ALARM !!!' ? originalTitle : '!!! ALARM !!!'
+        }, 1000)
+      }
+      // ensure the banner doesn't capture pointer events and block the UI
+      try{ const b = document.getElementById('security-alarm-right'); if(b) b.style.pointerEvents = 'none' }catch(e){}
+    }catch(e){}
+
+    // vibration pattern where supported; use interval to repeat pattern
+    try{
+      if(navigator && typeof navigator.vibrate === 'function'){
+        navigator.vibrate([400,200,400])
+        if(!vibrateTimer) vibrateTimer = setInterval(()=>{ navigator.vibrate([400,200,400]) }, 1200)
+      }
+    }catch(e){}
   }catch(e){
     console.error('Audio failed', e)
   }
@@ -741,20 +1076,112 @@ function stopAlarm(){
   alarmActive = false
   log('Security Alarm gestoppt')
   const banner = document.getElementById('security-alarm-right')
-  if(banner){ banner.hidden = true; banner.classList.remove('active') }
+  if(banner){ banner.hidden = true; banner.classList.remove('active'); try{ banner.style.pointerEvents = '' }catch(e){} }
   if(alarmVisualInterval){ clearInterval(alarmVisualInterval); alarmVisualInterval = null }
   if(sirenTimer){ clearInterval(sirenTimer); sirenTimer = null }
+  if(titleFlashTimer){ clearInterval(titleFlashTimer); titleFlashTimer = null; try{ document.title = originalTitle }catch(e){} }
+  if(vibrateTimer){ clearInterval(vibrateTimer); vibrateTimer = null; try{ if(navigator && typeof navigator.vibrate === 'function') navigator.vibrate(0) }catch(e){} }
   if(sirenNodes){
-    try{ sirenNodes.osc.stop(); sirenNodes.osc.disconnect() }catch(e){}
-    try{ sirenNodes.osc2.stop(); sirenNodes.osc2.disconnect() }catch(e){}
-    try{ sirenNodes.noiseSrc.stop(); sirenNodes.noiseSrc.disconnect() }catch(e){}
+    try{
+      Object.values(sirenNodes).forEach(n=>{
+        if(!n) return
+        try{ if(typeof n.stop === 'function') n.stop() }catch(e){}
+        try{ if(typeof n.disconnect === 'function') n.disconnect() }catch(e){}
+        try{ if(n && typeof n.pause === 'function') n.pause() }catch(e){}
+      })
+    }catch(e){}
     sirenNodes = null
   }
   if(audioContext){ audioContext.close(); audioContext = null }
+  try{ if(window.alarmSampleBlobUrl){ URL.revokeObjectURL(window.alarmSampleBlobUrl); window.alarmSampleBlobUrl = null } }catch(e){}
+}
+
+// Snooze the alarm for a number of seconds (default 60)
+function snoozeAlarm(seconds = 60){
+  if(!alarmActive) return
+  stopAlarm()
+  log(`Alarm schlummert für ${seconds} Sekunden`)
+  setTimeout(()=>{ startAlarm() }, Number(seconds) * 1000)
 }
 
 document.getElementById('raise-alarm')?.addEventListener('click', ()=> startAlarm())
 document.getElementById('stop-alarm')?.addEventListener('click', ()=> stopAlarm())
+document.getElementById('snooze-alarm')?.addEventListener('click', ()=> snoozeAlarm(60))
+
+// File input handler for local alarm sample
+try{
+  const fileInput = document.getElementById('alarm-file-input')
+  const loadBtn = document.getElementById('alarm-file-load')
+  if(fileInput && loadBtn){
+    loadBtn.addEventListener('click', async ()=>{
+      const f = fileInput.files && fileInput.files[0]
+      if(!f) return log('Keine Datei ausgewählt')
+      log('Lade Alarmdatei: ' + f.name)
+      try{
+        const ab = await f.arrayBuffer()
+        // store the ArrayBuffer on window for startAlarm to decode
+        window.alarmSampleArrayBuffer = ab
+        window.alarmSampleName = f.name
+        try{
+          if(window.alarmSampleBlobUrl) URL.revokeObjectURL(window.alarmSampleBlobUrl)
+        }catch(e){}
+        window.alarmSampleBlobUrl = URL.createObjectURL(new Blob([ab], { type: f.type || 'audio/mpeg' }))
+        log('Alarmdatei bereit — klicke "Alarm auslösen" zum Abspielen')
+      }catch(e){ log('Fehler beim Lesen der Datei') }
+    })
+    // also allow double-click on input to auto-select and prepare
+    fileInput.addEventListener('change', ()=>{})
+  }
+}catch(e){}
+
+// If user pasted a short alarm snippet, provide a wrapped factory for convenience.
+// This uses the user's pattern (square oscillator, quick decay) and exposes start/stop.
+if(!window.customAlarmFactory){
+  window.customAlarmFactory = function(audioCtx, masterGain){
+    let osc = null, gain = null
+    return {
+      start(){
+        try{
+          osc = audioCtx.createOscillator()
+          gain = audioCtx.createGain()
+          osc.type = 'square'
+          osc.frequency.setValueAtTime(450, audioCtx.currentTime)
+          gain.gain.setValueAtTime(1, audioCtx.currentTime)
+          // quick decay as in user's snippet
+          gain.gain.setTargetAtTime(0, audioCtx.currentTime + 0.5, 0.01)
+          osc.connect(gain); gain.connect(masterGain)
+          osc.start()
+          return { osc, gain }
+        }catch(e){ console.warn('custom factory start failed', e) }
+      },
+      stop(){
+        try{ if(osc && typeof osc.stop === 'function') osc.stop() }catch(e){}
+        try{ if(gain && typeof gain.disconnect === 'function') gain.disconnect() }catch(e){}
+      }
+    }
+  }
+}
+
+// apply manual control: set manual mode and apply slider to control rods
+const applyBtn = document.getElementById('apply-manual')
+if(applyBtn){
+  applyBtn.addEventListener('click', ()=>{
+    const manualCheckbox = document.getElementById('manual-mode')
+    const slider = document.getElementById('manual-slider')
+    if(!manualCheckbox || !slider) return
+    state.manualMode = manualCheckbox.checked
+    const val = Number(slider.value)
+    // only apply rods position when manual mode enabled
+    if(state.manualMode){
+      state.rods = Math.max(0, Math.min(100, val))
+      log(`Manuelle Steuerung: Kontrollstäbe auf ${Math.round(state.rods)}% gesetzt`)
+      updateRodsVisual()
+      updateUI()
+    } else {
+      log('Manuelle Steuerung ist deaktiviert. Aktivieren, um Änderungen anzuwenden.')
+    }
+  })
+}
 
 // periodically update turbine rpm while view is visible
 setInterval(()=>{
@@ -764,10 +1191,10 @@ setInterval(()=>{
 
 // simple physics loop
 setInterval(()=>{
-  // determine reactivity: manual mode uses manualControl, otherwise running drives reactivity
+  // determine reactivity: manual mode uses control rod position (less reactivity when rods inserted)
   let reactivity = 0
   if(state.manualMode){
-    reactivity = state.manualControl/100
+    reactivity = (100 - state.rods) / 100
   } else {
     reactivity = state.running ? 0.85 : 0
   }
@@ -790,7 +1217,7 @@ setInterval(()=>{
   // safety checks
   if(state.temp > 600){
     // catastrophic threshold — force SCRAM and warn
-    state.manualControl = 0
+    state.rods = 100
     state.running = false
     log('ALARM: Temperatur kritisch — SCRAM ausgelöst')
   } else if(state.temp > 400){
@@ -804,7 +1231,47 @@ setInterval(()=>{
 // initial render
 cooling.checked = state.cooling
 updateUI()
-log('Simulator geladen (ohne Regelstab-UI)')
+log('Simulator geladen')
+
+// --- DEBUG: Click troubleshooting helper ---
+function enableClickDebug(){
+  if(window._clickDebugEnabled) return
+  window._clickDebugEnabled = true
+  window.enableClickDebug = enableClickDebug
+  window.queryTopElementAt = (x,y)=> document.elementFromPoint(x,y)
+  window.addEventListener('click', function _globalClickDebug(e){
+    try{
+      console.groupCollapsed('Click Debug')
+      console.log('event.target:', e.target)
+      const pt = { x: e.clientX, y: e.clientY }
+      console.log('client coords:', pt)
+      const top = document.elementFromPoint(pt.x, pt.y)
+      console.log('elementFromPoint:', top)
+      // log computed styles that affect pointer events/visibility
+      if(top){
+        const cs = window.getComputedStyle(top)
+        console.log('computed pointer-events:', cs.pointerEvents, 'visibility:', cs.visibility, 'display:', cs.display, 'z-index:', cs.zIndex)
+      }
+      console.groupEnd()
+      // highlight briefly
+      highlightElement(top)
+    }catch(err){ console.error('click debug failed', err) }
+  }, true)
+  console.log('Click debug enabled — click anywhere to inspect the top element (captures during bubble/capture).')
+}
+
+function highlightElement(el){
+  if(!el || !el.style) return
+  const prev = el.style.outline
+  el.style.outline = '3px solid magenta'
+  setTimeout(()=>{ try{ el.style.outline = prev }catch(e){} }, 700)
+}
+
+// Auto-enable if debug flag present in URL or localStorage
+try{
+  const params = new URLSearchParams(window.location.search)
+  if(params.get('debugClicks') === '1' || localStorage.getItem('debugClicks') === '1') enableClickDebug()
+}catch(e){}
 
 // --- RESET Button with password (4532) ---
 document.getElementById('reset-btn')?.addEventListener('click', ()=>{
@@ -941,7 +1408,7 @@ generateTableSlips(100)
   state.dosage = 0.2
   state.running = false
   state.manualMode = false
-  state.manualControl = 50
+  state.rods = 50
   state.cooling = true
   cooling.checked = true
   document.getElementById('manual-mode').checked = false

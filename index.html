@@ -10,6 +10,7 @@
   <header>
     <h1>Chernobyl — Kontrollraum (Simulator)</h1>
   </header>
+  
   <!-- Annunciator panel (warning lamps with Cyrillic labels) -->
   <div class="annunciator">
     <div class="annunciator-row">
@@ -41,6 +42,7 @@
       <div class="core-card">
         <div class="card-header">
             <h2>Reaktorkern</h2>
+            <div class="serial">Сер. №: ЧЭ-117 / Пульт-01</div>
             <div class="hazard-stripe" aria-hidden="true"></div>
           </div>
         <div class="core-visual">
@@ -57,6 +59,23 @@
           <div>Leistung: <span id="power">0</span>%</div>
           <div>Temperatur: <span id="temperature">0</span> °C</div>
           <div>Druck: <span id="pressure">0</span> kPa</div>
+        </div>
+
+        <!-- Kontrollstäbe Visual & AZ-5 (neu) -->
+        <div class="rod-panel">
+          <label style="font-family: monospace; color: #fbbf24;">Kontrollstäbe Höhe: <span id="rod-value">50%</span></label>
+          <div class="rod-visual">
+            <div class="rod-tube">
+              <div id="control-rods" class="rod-fill" style="height:50%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AZ-5 groß: runder Knopf mit viereckiger Hazard-Umrandung -->
+        <div class="az5-big-area">
+          <div class="hazard-square" aria-hidden="true"></div>
+          <button id="az5-button-large" class="az5-big-button">AZ-5</button>
+          <div id="az5-cover-large" class="az5-cover-large"></div>
         </div>
 
         <!-- Analog double-needle gauge (pressure + temperature) -->
@@ -183,16 +202,13 @@
             <button id="stop-btn" style="background: #472a1a; border: 2px solid #f97316;">Stop</button>
           </div>
           
-          <div class="az5">
-            <div class="cover" id="az5-cover"></div>
-            <button id="az5-button" class="az5-button">AZ-5</button>
-          </div>
+          
           
           <label style="font-family: monospace; color: #4ade80;"><input id="cooling" type="checkbox" checked> Kühlung</label>
           
           <div class="reactor-controls" style="border: 2px dotted #ff6b35; padding: 8px; margin: 8px 0;">
             <label style="font-family: monospace; color: #fbbf24;"><input id="manual-mode" type="checkbox"> Manuelle Steuerung</label>
-            <label style="font-family: monospace; color: #a0a0a0;">Leistungsregler: <input id="manual-slider" type="range" min="0" max="100" value="50" style="width: 100%;"></label>
+            <label style="font-family: monospace; color: #a0a0a0;">Kontrollstäbe Höhe: <input id="manual-slider" type="range" min="0" max="100" value="50" style="width: 100%;"></label>
             <button id="apply-manual" style="background: #374151; border: 1px solid #9ca3af; font-family: monospace;">Anwenden</button>
             <div class="selsyn-controls">
               <div class="knob-group">
@@ -234,6 +250,11 @@
             <button id="raise-alarm" class="danger">Alarm auslösen</button>
             <button id="stop-alarm">Alarm stoppen</button>
             <label class="vol-label">Lautstärke: <input id="alarm-volume" type="range" min="0" max="100" value="30"></label>
+            <div style="margin-top:8px;">
+              <label style="font-size:0.9em;">Lokale Alarmdatei:</label>
+              <input id="alarm-file-input" type="file" accept="audio/*">
+              <button id="alarm-file-load" style="margin-left:6px;">Als Alarm wählen</button>
+            </div>
           </div>
           <div class="security-status">
             <p>Kameras: <strong>Online</strong></p>
