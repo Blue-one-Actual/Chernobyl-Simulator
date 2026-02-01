@@ -632,45 +632,60 @@ function stampSlip(slipEl, status){
   // disable buttons
   slipEl.querySelectorAll('button').forEach(b=>b.disabled = true)
   log(`Security: Slip #${id} ${status.toUpperCase()}`)
+  // move finalized slip to the processing board on the right
+  try{
+    const board = document.getElementById('slip-board')
+    if(board && slipEl.parentElement !== board){
+      board.appendChild(slipEl)
+      const actions = slipEl.querySelector('.slip-actions')
+      if(actions) actions.style.display = 'none'
+    }
+  }catch(e){console.warn('move stamped slip failed', e)}
 }
 
-// Drag-and-drop for slips
+// Drag-and-drop for slips (works for source, table center and board)
 let draggingSlip = null
-document.querySelectorAll('.slip[draggable="true"]').forEach(s => {
-  s.addEventListener('dragstart', ev => {
-    draggingSlip = s
-    ev.dataTransfer.setData('text/plain', s.dataset.id || '')
-    s.classList.add('dragging')
-  })
-  s.addEventListener('dragend', ev => {
-    draggingSlip = null
-    s.classList.remove('dragging')
-  })
+document.addEventListener('dragstart', ev => {
+  const s = ev.target.closest && ev.target.closest('.slip')
+  if(!s) return
+  draggingSlip = s
+  try{ ev.dataTransfer.setData('text/plain', s.dataset.id || '') }catch(e){}
+  s.classList.add('dragging')
+})
+document.addEventListener('dragend', ev => {
+  const s = ev.target.closest && ev.target.closest('.slip')
+  if(s) s.classList.remove('dragging')
+  draggingSlip = null
 })
 
 const slipBoard = document.getElementById('slip-board')
 const slipSource = document.getElementById('slip-source')
-;[slipBoard, slipSource].forEach(el => {
-  if(!el) return
-  el.addEventListener('dragover', ev => { ev.preventDefault(); el.classList.add('highlight') })
-  el.addEventListener('dragleave', ev => { el.classList.remove('highlight') })
-  el.addEventListener('drop', ev => {
-    ev.preventDefault(); el.classList.remove('highlight')
-    const id = ev.dataTransfer.getData('text/plain')
-    // find the element by data-id (prefer draggingSlip)
-    const node = draggingSlip || document.querySelector(`.slip[data-id="${id}"]`)
-    if(node && el !== node.parentElement){
-      el.appendChild(node)
-      // if dropped into target, show actions; if moved back to source, hide
-      const actions = node.querySelector('.slip-actions')
-      if(el.id === 'slip-board'){
-        if(actions) actions.style.display = 'flex'
-      } else {
-        if(actions) actions.style.display = 'none'
+function attachSlipDropTargets(){
+  const tableCenter = document.getElementById('table-center')
+  ;[slipBoard, slipSource, tableCenter].forEach(el => {
+    if(!el) return
+    // avoid adding duplicate listeners
+    if(el._dropHandlerAttached) return el._dropHandlerAttached = true
+    el.addEventListener('dragover', ev => { ev.preventDefault(); el.classList.add('highlight') })
+    el.addEventListener('dragleave', ev => { el.classList.remove('highlight') })
+    el.addEventListener('drop', ev => {
+      ev.preventDefault(); el.classList.remove('highlight')
+      const id = ev.dataTransfer.getData('text/plain')
+      const node = draggingSlip || document.querySelector(`.slip[data-id="${id}"]`)
+      if(node && el !== node.parentElement){
+        el.appendChild(node)
+        const actions = node.querySelector('.slip-actions')
+        // show actions on table center or processing board
+        if(el.id === 'slip-board' || el.id === 'table-center'){
+          if(actions) actions.style.display = 'flex'
+        } else {
+          if(actions) actions.style.display = 'none'
+        }
       }
-    }
+    })
   })
-})
+}
+attachSlipDropTargets()
 
 
 let turbineRunning = false
@@ -1390,7 +1405,7 @@ function generateTableSlips(count = 100){
     slip.style.visibility = 'visible'
     // ensure actions hidden initially (only show when dropped into board)
     const actions = slip.querySelector('.slip-actions')
-    if(actions) actions.style.display = 'none'
+    if(actions) actions.style.display = 'flex'
     // wire interactions
     setupSlipInteractions(slip)
   }
@@ -1398,6 +1413,8 @@ function generateTableSlips(count = 100){
 
 // generate 100 slips on load for the security table
 generateTableSlips(100)
+// attach drop handlers again now that table-center exists
+try{ attachSlipDropTargets() }catch(e){}
     log('SICHERHEIT: Reset-Versuch mit falschem Passwort')
     return
   }
