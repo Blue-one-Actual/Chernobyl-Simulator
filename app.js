@@ -732,18 +732,21 @@ function startAlarm(){
     const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(55, ctx.currentTime)
     const low = ctx.createOscillator(); low.type = 'sine'; low.frequency.setValueAtTime(110, ctx.currentTime)
     const body = ctx.createOscillator(); body.type = 'sawtooth'; body.frequency.setValueAtTime(220, ctx.currentTime)
+    // high treble layer to add a shrill edge
+    const screech = ctx.createOscillator(); screech.type = 'triangle'; screech.frequency.setValueAtTime(1200, ctx.currentTime)
 
     const subG = ctx.createGain(); subG.gain.value = 0.0001
     const lowG = ctx.createGain(); lowG.gain.value = 0.0001
     const bodyG = ctx.createGain(); bodyG.gain.value = 0.0001
+    const screechG = ctx.createGain(); screechG.gain.value = 0.0001
 
-    sub.connect(subG); low.connect(lowG); body.connect(bodyG)
+    sub.connect(subG); low.connect(lowG); body.connect(bodyG); screech.connect(screechG)
 
     // mild punch filter and gentle compression for 'mighty' presence
     const punch = ctx.createBiquadFilter(); punch.type = 'lowpass'; punch.frequency.value = 4000
     const comp = ctx.createDynamicsCompressor(); comp.threshold.setValueAtTime(-12, ctx.currentTime); comp.ratio.setValueAtTime(8, ctx.currentTime); comp.attack.setValueAtTime(0.01, ctx.currentTime); comp.release.setValueAtTime(0.25, ctx.currentTime)
 
-    subG.connect(punch); lowG.connect(punch); bodyG.connect(punch)
+    subG.connect(punch); lowG.connect(punch); bodyG.connect(punch); screechG.connect(punch)
     punch.connect(comp); comp.connect(master)
 
     // subtle noise layer for realism
@@ -758,7 +761,7 @@ function startAlarm(){
 
     sub.start(); low.start(); body.start(); noiseSrc.start()
 
-    sirenNodes = {sub, low, body, subG, lowG, bodyG, noiseSrc, noiseG, punch, comp, master}
+    sirenNodes = {sub, low, body, screech, subG, lowG, bodyG, screechG, noiseSrc, noiseG, punch, comp, master}
 
     // pulsed pattern: stronger pulse (~500ms) every ~600ms (faster)
     const pulseInterval = 600
@@ -779,6 +782,14 @@ function startAlarm(){
           g.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * mult), now + attack)
           g.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
         })
+
+        // shrill treble pulse
+        try{
+          screechG.gain.cancelScheduledValues(now)
+          screechG.gain.setValueAtTime(0.0001, now)
+          screechG.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * 0.8), now + attack)
+          screechG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
+        }catch(e){}
 
         // slight body frequency modulation for urgency
         try{ body.frequency.cancelScheduledValues(now); body.frequency.setValueAtTime(220, now); body.frequency.linearRampToValueAtTime(260, now + attack + sustain*0.5); body.frequency.linearRampToValueAtTime(220, now + attack + sustain + release) }catch(e){}
