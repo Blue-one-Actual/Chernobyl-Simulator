@@ -707,6 +707,9 @@ let alarmVisualInterval = null
 let sirenTimer = null
 let audioContext = null
 let sirenNodes = null
+let originalTitle = document.title
+let titleFlashTimer = null
+let vibrateTimer = null
 
 function startAlarm(){
   if(alarmActive) return
@@ -788,6 +791,44 @@ function startAlarm(){
         noiseG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
       }catch(e){ console.error('pulse failed', e) }
     }, pulseInterval)
+
+    // Desktop/Mobile: request/resume audio on first user gesture if suspended
+    if (audioContext && audioContext.state === 'suspended'){
+      const resumeOnUserGesture = ()=>{
+        audioContext.resume().catch(()=>{})
+        window.removeEventListener('pointerdown', resumeOnUserGesture)
+      }
+      window.addEventListener('pointerdown', resumeOnUserGesture)
+    }
+
+    // Desktop notifications (silent) to alert if tab not visible
+    try{
+      if('Notification' in window){
+        if(Notification.permission === 'granted'){
+          new Notification('Security Alarm', { body: 'Sicherheitsalarm ausgelöst!', silent: true })
+        } else if(Notification.permission === 'default'){
+          Notification.requestPermission().then(p=>{ if(p === 'granted') new Notification('Security Alarm', { body: 'Sicherheitsalarm ausgelöst!', silent: true }) })
+        }
+      }
+    }catch(e){}
+
+    // flash document title to draw attention
+    try{
+      if(!titleFlashTimer){
+        originalTitle = document.title || 'Simulator'
+        titleFlashTimer = setInterval(()=>{
+          document.title = document.title === '!!! ALARM !!!' ? originalTitle : '!!! ALARM !!!'
+        }, 1000)
+      }
+    }catch(e){}
+
+    // vibration pattern where supported; use interval to repeat pattern
+    try{
+      if(navigator && typeof navigator.vibrate === 'function'){
+        navigator.vibrate([400,200,400])
+        if(!vibrateTimer) vibrateTimer = setInterval(()=>{ navigator.vibrate([400,200,400]) }, 1200)
+      }
+    }catch(e){}
   }catch(e){
     console.error('Audio failed', e)
   }
@@ -801,6 +842,8 @@ function stopAlarm(){
   if(banner){ banner.hidden = true; banner.classList.remove('active') }
   if(alarmVisualInterval){ clearInterval(alarmVisualInterval); alarmVisualInterval = null }
   if(sirenTimer){ clearInterval(sirenTimer); sirenTimer = null }
+  if(titleFlashTimer){ clearInterval(titleFlashTimer); titleFlashTimer = null; try{ document.title = originalTitle }catch(e){} }
+  if(vibrateTimer){ clearInterval(vibrateTimer); vibrateTimer = null; try{ if(navigator && typeof navigator.vibrate === 'function') navigator.vibrate(0) }catch(e){} }
   if(sirenNodes){
     try{
       Object.values(sirenNodes).forEach(n=>{
@@ -814,8 +857,17 @@ function stopAlarm(){
   if(audioContext){ audioContext.close(); audioContext = null }
 }
 
+// Snooze the alarm for a number of seconds (default 60)
+function snoozeAlarm(seconds = 60){
+  if(!alarmActive) return
+  stopAlarm()
+  log(`Alarm schlummert für ${seconds} Sekunden`)
+  setTimeout(()=>{ startAlarm() }, Number(seconds) * 1000)
+}
+
 document.getElementById('raise-alarm')?.addEventListener('click', ()=> startAlarm())
 document.getElementById('stop-alarm')?.addEventListener('click', ()=> stopAlarm())
+document.getElementById('snooze-alarm')?.addEventListener('click', ()=> snoozeAlarm(60))
 
 // periodically update turbine rpm while view is visible
 setInterval(()=>{
