@@ -87,30 +87,34 @@ const stopBtn = el('stop-btn')
     lfoG.connect(main1.frequency); lfoG.connect(main2.frequency)
     lfo.start()
 
-    // Pulsed gate using scheduled gain automation for a martial pattern
-    const pulseInterval = 1000
-    sirenTimer = setInterval(()=>{
-      try{
-        const now = ctx.currentTime
-        const vol = Math.max(0.12, alarmVolume/100 * 1.2)
-        const attack = 0.02
-        const sustain = 0.7
-        const release = 0.18
+    // Continuous sustain: steady LFO-driven wail (matches continuous alarm clip)
+    // Increase LFO rate/depth for a more urgent sweep and bring voice gains
+    lfo.frequency.setValueAtTime(0.6, ctx.currentTime)
+    lfoG.gain.setValueAtTime(90, ctx.currentTime)
 
-        ;[subG, m1G, m2G].forEach((g, idx)=>{
-          g.gain.cancelScheduledValues(now)
-          g.gain.setValueAtTime(0.0001, now)
-          const mult = idx===0 ? 1.8 : (idx===1 ? 1.2 : 1.0)
-          g.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * mult), now + attack)
-          g.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
-        })
+    const now = ctx.currentTime
+    const attack = 0.02
+    const vol = Math.max(0.12, alarmVolume/100 * 1.2)
 
-        noiseG.gain.cancelScheduledValues(now)
-        noiseG.gain.setValueAtTime(0.0001, now)
-        noiseG.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * 0.12), now + 0.02)
-        noiseG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
-      }catch(e){ console.error('soviet pulse failed', e) }
-    }, pulseInterval)
+    // ramp to a steady sustain level (no pulsed gating)
+    subG.gain.cancelScheduledValues(now)
+    subG.gain.setValueAtTime(0.0001, now)
+    subG.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * 1.8), now + attack)
+
+    m1G.gain.cancelScheduledValues(now)
+    m1G.gain.setValueAtTime(0.0001, now)
+    m1G.gain.exponentialRampToValueAtTime(Math.max(0.003, vol * 1.2), now + attack)
+
+    m2G.gain.cancelScheduledValues(now)
+    m2G.gain.setValueAtTime(0.0001, now)
+    m2G.gain.exponentialRampToValueAtTime(Math.max(0.0025, vol * 1.0), now + attack)
+
+    noiseG.gain.cancelScheduledValues(now)
+    noiseG.gain.setValueAtTime(0.0001, now)
+    noiseG.gain.exponentialRampToValueAtTime(Math.max(0.0012, vol * 0.1), now + attack)
+
+    // no periodic timer for continuous mode
+    sirenTimer = null
   }catch(e){
     console.error('Audio failed', e)
   }
