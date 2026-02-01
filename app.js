@@ -812,22 +812,102 @@ async function startAlarm(){
     const targetVol = Math.max(0.08, alarmVolume/100 * 1.25)
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
-    // If an ArrayBuffer was placed on `window.alarmSampleArrayBuffer`, play it directly as looping alarm
-    if(window.alarmSampleArrayBuffer){
+    // Helper: play the alarm once (supports uploaded ArrayBuffer, blob URL, sample URL, custom factory, or synth beep)
+    const repeatMs = (window.alarmRepeatIntervalSeconds || 5) * 1000
+    const activePlayHandles = []
+
+    async function playOnce(){
+      // if there's an ArrayBuffer upload, decode and play that once
       try{
-        const audioBuf = await ctx.decodeAudioData(window.alarmSampleArrayBuffer.slice(0))
-        const src = ctx.createBufferSource()
-        const sampleG = ctx.createGain()
-        src.buffer = audioBuf; src.loop = true
-        sampleG.gain.value = 0.0001
-        src.connect(sampleG); sampleG.connect(master)
-        src.start()
-        sirenNodes = { sampleSrc: src, sampleG, master }
-        const nowS = ctx.currentTime
-        sampleG.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), nowS + 0.02)
-        log(`Alarm: MP3 wird abgespielt — ${window.alarmSampleName || 'uploaded sample'}`)
-        return
+        if(window.alarmSampleArrayBuffer){
+          const audioBuf = await ctx.decodeAudioData(window.alarmSampleArrayBuffer.slice(0))
+          const src = ctx.createBufferSource(); src.buffer = audioBuf; src.loop = false
+          const g = ctx.createGain(); g.gain.value = 0.0001
+          src.connect(g); g.connect(master)
+          src.start()
+          // store to allow stopping
+          activePlayHandles.push({ type: 'buffer', src, g })
+          g.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), ctx.currentTime + 0.02)
+          // remove handle when ended
+          src.onended = ()=>{
+            const idx = activePlayHandles.findIndex(h=>h.src===src)
+            if(idx!==-1) activePlayHandles.splice(idx,1)
+          }
+          log(`Alarm: MP3 spielt einmal — ${window.alarmSampleName || 'uploaded sample'}`)
+          return
+        }
       }catch(e){ console.warn('sample playback failed', e) }
+
+      // if blob URL exists, use HTMLAudio as fallback
+      try{
+        if(window.alarmSampleBlobUrl){
+          const audio = new Audio(window.alarmSampleBlobUrl)
+          audio.loop = false
+          audio.volume = Math.min(1, (alarmVolume||30)/100)
+          audio.play().catch(()=>{})
+          activePlayHandles.push({ type: 'audio', audio })
+          audio.addEventListener('ended', ()=>{
+            const idx = activePlayHandles.findIndex(h=>h.audio===audio)
+            if(idx!==-1) activePlayHandles.splice(idx,1)
+          })
+          log('Alarm: Blob-URL wird einmal abgespielt')
+          return
+        }
+      }catch(e){ console.warn('blob playback failed', e) }
+
+      // if a sample URL is provided, fetch decode and play once
+      try{
+        if(window.alarmSampleUrl){
+          const resp = await fetch(window.alarmSampleUrl)
+          if(resp.ok){
+            const ab = await resp.arrayBuffer()
+            const audioBuf = await ctx.decodeAudioData(ab)
+            const src = ctx.createBufferSource(); src.buffer = audioBuf; src.loop = false
+            const g = ctx.createGain(); g.gain.value = 0.0001
+            src.connect(g); g.connect(master); src.start()
+            activePlayHandles.push({ type: 'buffer', src, g })
+            g.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), ctx.currentTime + 0.02)
+            src.onended = ()=>{ const idx = activePlayHandles.findIndex(h=>h.src===src); if(idx!==-1) activePlayHandles.splice(idx,1) }
+            log('Alarm: URL-Sample spielt einmal')
+            return
+          }
+        }
+      }catch(e){ console.warn('sample URL playback failed', e) }
+
+      // if custom factory exists, start it and schedule stop after 1s (factory may implement its own decay)
+      try{
+        if(typeof window.customAlarmFactory === 'function'){
+          const controller = window.customAlarmFactory(ctx, master)
+          if(controller && typeof controller.start === 'function'){
+            const maybe = await controller.start()
+            activePlayHandles.push({ type: 'custom', controller })
+            // schedule stop in ~1s if factory has stop
+            setTimeout(()=>{ try{ if(controller && typeof controller.stop === 'function') controller.stop(); }catch(e){} }, 1000)
+            log('Alarm: Custom factory Einmalruf')
+            return
+          }
+        }
+      }catch(e){ console.warn('custom play failed', e) }
+
+      // fallback: create a short synthesized beep (one-shot)
+      try{
+        const o = ctx.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(450, ctx.currentTime)
+        const g = ctx.createGain(); g.gain.value = 0.0001
+        o.connect(g); g.connect(master)
+        o.start()
+        g.gain.exponentialRampToValueAtTime(Math.max(0.002, targetVol * 0.8), ctx.currentTime + 0.01)
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8)
+        setTimeout(()=>{ try{ o.stop() }catch(e){} }, 900)
+        activePlayHandles.push({ type: 'buffer', src: o, g })
+        log('Alarm: Synth-Einmalton')
+      }catch(e){ console.error('fallback beep failed', e) }
+    }
+
+    // play immediately once, then schedule repeats every `repeatMs` milliseconds
+    try{ await playOnce() }catch(e){ console.warn('initial playOnce failed', e) }
+    if(repeatMs > 0){
+      if(sirenTimer) clearInterval(sirenTimer)
+      sirenTimer = setInterval(()=>{ try{ playOnce() }catch(e){ console.warn('repeated play failed', e) } }, repeatMs)
     }
 
     // If caller provided a sample URL (relative or absolute), try to load and play it as a looping alarm.
