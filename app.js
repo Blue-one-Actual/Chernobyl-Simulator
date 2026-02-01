@@ -812,14 +812,22 @@ async function startAlarm(){
     const targetVol = Math.max(0.08, alarmVolume/100 * 1.25)
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
-    // If an ArrayBuffer was placed on `window.alarmSampleArrayBuffer`, analyze it and tune the synth to match
-    let matchParams = null
+    // If an ArrayBuffer was placed on `window.alarmSampleArrayBuffer`, play it directly as looping alarm
     if(window.alarmSampleArrayBuffer){
       try{
-        matchParams = await analyzeSampleParams(window.alarmSampleArrayBuffer, ctx)
-        if(matchParams) log(`Alarm: Sample analysiert — LFO ${matchParams.lfoRate.toFixed(2)}Hz, body ${Math.round(matchParams.bodyFreq)}Hz`)
-        else log('Alarm: Sampleanalyse fehlgeschlagen, verwenden Synth-Defaults')
-      }catch(e){ console.warn('sample analysis failed', e) }
+        const audioBuf = await ctx.decodeAudioData(window.alarmSampleArrayBuffer.slice(0))
+        const src = ctx.createBufferSource()
+        const sampleG = ctx.createGain()
+        src.buffer = audioBuf; src.loop = true
+        sampleG.gain.value = 0.0001
+        src.connect(sampleG); sampleG.connect(master)
+        src.start()
+        sirenNodes = { sampleSrc: src, sampleG, master }
+        const nowS = ctx.currentTime
+        sampleG.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), nowS + 0.02)
+        log(`Alarm: MP3 wird abgespielt — ${window.alarmSampleName || 'uploaded sample'}`)
+        return
+      }catch(e){ console.warn('sample playback failed', e) }
     }
 
     // If caller provided a sample URL (relative or absolute), try to load and play it as a looping alarm.
@@ -898,20 +906,6 @@ async function startAlarm(){
       const lfoG2 = ctx.createGain(); lfoG2.gain.value = 360
       lfo.connect(lfoG2); lfoG2.connect(peal.frequency)
       lfo.start()
-
-      // apply analysis-derived parameters if available
-      if(matchParams){
-        try{
-          body.frequency.setValueAtTime(matchParams.bodyFreq, ctx.currentTime)
-          screech.frequency.setValueAtTime(matchParams.screechFreq, ctx.currentTime)
-          peal.frequency.setValueAtTime(matchParams.pealFreq, ctx.currentTime)
-          lfo.frequency.setValueAtTime(matchParams.lfoRate, ctx.currentTime)
-          lfoG.gain.setValueAtTime(matchParams.lfoDepth, ctx.currentTime)
-          lfoG2.gain.setValueAtTime(Math.max(20, matchParams.lfoDepth * 0.75), ctx.currentTime)
-          // boost noise slightly if sample had more high-frequency content
-          try{ noiseG.gain.value = Math.min(0.008, 0.001 + (matchParams.noiseRatio||0) * 0.0008) }catch(e){}
-        }catch(e){ console.warn('apply match params failed', e) }
-      }
 
       // make body and screech more 'mechanical' (triangle-like harmonics)
       try{ body.type = 'triangle' }catch(e){}
