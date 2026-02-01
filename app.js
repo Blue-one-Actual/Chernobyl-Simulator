@@ -707,7 +707,7 @@ function startAlarm(){
     const master = ctx.createGain()
     master.gain.setValueAtTime(0.0001, ctx.currentTime)
     master.connect(ctx.destination)
-    const targetVol = Math.max(0.02, alarmVolume/100 * 0.8)
+    const targetVol = Math.max(0.05, alarmVolume/100 * 1.0)
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
     // create weighted multi-oscillator stack for a powerful, authoritative tone
@@ -722,8 +722,8 @@ function startAlarm(){
     sub.connect(subG); low.connect(lowG); body.connect(bodyG)
 
     // mild punch filter and gentle compression for 'mighty' presence
-    const punch = ctx.createBiquadFilter(); punch.type = 'lowpass'; punch.frequency.value = 3000
-    const comp = ctx.createDynamicsCompressor(); comp.threshold.setValueAtTime(-18, ctx.currentTime); comp.ratio.setValueAtTime(6, ctx.currentTime)
+    const punch = ctx.createBiquadFilter(); punch.type = 'lowpass'; punch.frequency.value = 4000
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.setValueAtTime(-12, ctx.currentTime); comp.ratio.setValueAtTime(8, ctx.currentTime); comp.attack.setValueAtTime(0.01, ctx.currentTime); comp.release.setValueAtTime(0.25, ctx.currentTime)
 
     subG.connect(punch); lowG.connect(punch); bodyG.connect(punch)
     punch.connect(comp); comp.connect(master)
@@ -742,29 +742,32 @@ function startAlarm(){
 
     sirenNodes = {sub, low, body, subG, lowG, bodyG, noiseSrc, noiseG, punch, comp, master}
 
-    // pulsed pattern: strong pulse (~400ms) every ~900ms
-    const pulseInterval = 900
+    // pulsed pattern: stronger pulse (~500ms) every ~800ms
+    const pulseInterval = 800
     sirenTimer = setInterval(()=>{
       try{
         const now = ctx.currentTime
-        const vol = Math.max(0.02, alarmVolume/100 * 0.8)
-        // quick attack, sustain, then release
+        const vol = Math.max(0.05, alarmVolume/100 * 1.0)
+        // quick attack, sustain, then release (slightly longer sustain for gravity)
         const attack = 0.02
-        const sustain = 0.36
-        const release = 0.22
+        const sustain = 0.44
+        const release = 0.24
 
         ;[subG, lowG, bodyG].forEach((g, idx)=>{
           g.gain.cancelScheduledValues(now)
           g.gain.setValueAtTime(0.0001, now)
-          // weight different oscillators
-          const mult = idx===0? 1.0 : (idx===1? 0.85 : 0.6)
-          g.gain.exponentialRampToValueAtTime(Math.max(0.001, vol * mult), now + attack)
+          // stronger weighting for sub and low for power
+          const mult = idx===0? 1.6 : (idx===1? 1.0 : 0.9)
+          g.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * mult), now + attack)
           g.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
         })
 
+        // slight body frequency modulation for urgency
+        try{ body.frequency.cancelScheduledValues(now); body.frequency.setValueAtTime(220, now); body.frequency.linearRampToValueAtTime(260, now + attack + sustain*0.5); body.frequency.linearRampToValueAtTime(220, now + attack + sustain + release) }catch(e){}
+
         noiseG.gain.cancelScheduledValues(now)
         noiseG.gain.setValueAtTime(0.0001, now)
-        noiseG.gain.exponentialRampToValueAtTime(Math.max(0.0005, vol * 0.06), now + 0.01)
+        noiseG.gain.exponentialRampToValueAtTime(Math.max(0.001, vol * 0.09), now + 0.01)
         noiseG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
       }catch(e){ console.error('pulse failed', e) }
     }, pulseInterval)
