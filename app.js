@@ -813,7 +813,7 @@ async function startAlarm(){
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
     // Helper: play the alarm once (supports uploaded ArrayBuffer, blob URL, sample URL, custom factory, or synth beep)
-    const repeatMs = (window.alarmRepeatIntervalSeconds || 5) * 1000
+    const repeatMs = (window.alarmRepeatIntervalSeconds || 2.5) * 1000
     const activePlayHandles = []
 
     async function playOnce(){
