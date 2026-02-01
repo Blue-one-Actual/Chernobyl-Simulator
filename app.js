@@ -725,7 +725,7 @@ function startAlarm(){
     const master = ctx.createGain()
     master.gain.setValueAtTime(0.0001, ctx.currentTime)
     master.connect(ctx.destination)
-    const targetVol = Math.max(0.05, alarmVolume/100 * 1.0)
+    const targetVol = Math.max(0.08, alarmVolume/100 * 1.25)
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
     // create weighted multi-oscillator stack for a powerful, authoritative tone
@@ -760,12 +760,12 @@ function startAlarm(){
 
     sirenNodes = {sub, low, body, subG, lowG, bodyG, noiseSrc, noiseG, punch, comp, master}
 
-    // pulsed pattern: stronger pulse (~500ms) every ~800ms
-    const pulseInterval = 800
+    // pulsed pattern: stronger pulse (~500ms) every ~600ms (faster)
+    const pulseInterval = 600
     sirenTimer = setInterval(()=>{
       try{
         const now = ctx.currentTime
-        const vol = Math.max(0.05, alarmVolume/100 * 1.0)
+        const vol = Math.max(0.08, alarmVolume/100 * 1.25)
         // quick attack, sustain, then release (slightly longer sustain for gravity)
         const attack = 0.02
         const sustain = 0.44
