@@ -1,11 +1,14 @@
 // Vereinfachte pädagogische Simulation des Kontrollraums
 const state = {
-  rod: 100, // 100% eingezogen = max abgesichert
+  // Removed rod-based control; placeholder `manualControl` for future control implementation
+  manualControl: 50, // 0..100, currently unused
+  manualMode: false,
   cooling: true,
   running: false,
   power: 0, // 0-100%
   temp: 20, // °C
-  pressure: 101.3 // kPa
+  pressure: 101.3, // kPa
+  dosage: 0.2 // Sv/h (radiation dose)
 }
 
 const el = id => document.getElementById(id)
@@ -16,22 +19,41 @@ function log(msg){
 }
 
 // DOM refs
-const rodSlider = el('rod-slider')
-const rodVal = el('rod-val')
 const cooling = el('cooling')
 const startBtn = el('start-btn')
 const stopBtn = el('stop-btn')
-const scramBtn = el('scram-btn')
 const powerEl = el('power')
 const tempEl = el('temperature')
 const pressureEl = el('pressure')
 const coreGlow = el('core-glow')
 const rodsGroup = el('control-rods')
 
-rodSlider.addEventListener('input', e => {
-  state.rod = Number(e.target.value)
-  rodVal.textContent = state.rod
-})
+// alarm volume default (declared before any handlers)
+let alarmVolume = 30 // UI-controlled volume (0..100)
+
+// Reactor manual control elements
+const manualModeEl = el('manual-mode')
+const manualSlider = el('manual-slider')
+const applyManual = el('apply-manual')
+
+if(manualModeEl){
+  manualModeEl.addEventListener('change', e=>{
+    state.manualMode = e.target.checked
+    log(`Manuelle Steuerung ${state.manualMode? 'aktiv' : 'aus'}`)
+  })
+}
+if(manualSlider){
+  manualSlider.addEventListener('input', e=>{
+    state.manualControl = Number(e.target.value)
+  })
+}
+if(applyManual){
+  applyManual.addEventListener('click', ()=>{
+    state.power = Number(state.manualControl)
+    state.running = true
+    log(`Manuelle Leistung gesetzt: ${state.manualControl}%`)
+  })
+}
 
 cooling.addEventListener('change', e => {
   state.cooling = e.target.checked
@@ -47,33 +69,10 @@ stopBtn.addEventListener('click', ()=>{
   log('Reaktorbetrieb: STOP')
 })
 
-scramBtn.addEventListener('click', ()=>{
-  // Emergency SCRAM: regeln vollständig einfahren
-  state.rod = 100
-  rodSlider.value = 100
-  rodVal.textContent = 100
-  state.running = false
-  log('EMERGENCY SCRAM: Alle Regelstäbe voll eingefahren')
-})
+// SCRAM button removed from UI; use AZ-5 to trigger emergency shutdown
 
 // draw control rods (visual only)
-function renderRods(){
-  const g = []
-  rodsGroup.innerHTML = ''
-  for(let i=0;i<6;i++){
-    const x = 30 + i*26
-    const insertion = state.rod/100 // 0..1, 1 = fully inserted
-    const y = 30 + (1-insertion)*120
-    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
-    rect.setAttribute('x', x)
-    rect.setAttribute('y', y)
-    rect.setAttribute('width', 12)
-    rect.setAttribute('height', 140 - (1-insertion)*120)
-    rect.setAttribute('fill','#bdbdbd')
-    rect.setAttribute('stroke','#888')
-    rodsGroup.appendChild(rect)
-  }
-}
+// control rods removed; visual will be reworked separately
 
 function updateUI(){
   powerEl.textContent = Math.round(state.power)
@@ -91,15 +90,688 @@ function updateUI(){
     const angle = (state.power/100) * 180 - 90
     needle.setAttribute('transform', `rotate(${angle} 100 140)`)
   }
-  renderRods()
+  // update analog needles
+  updateAnalogNeedles()
+  // update dosimeter
+  updateDosimeter()
+  // no control rods to render
 }
+
+// --- DOSIMETER: update radiation readout based on power & temperature ---
+function updateDosimeter(){
+  // Dosage increases with power and temperature
+  const baseDosage = 0.2
+  const powerDose = (state.power / 100) * 0.8
+  const tempDose = Math.max(0, (state.temp - 100) / 500) * 1.5
+  state.dosage = baseDosage + powerDose + tempDose
+  
+  const dosEl = el('dosimeter-value')
+  const dosBar = el('dosimeter-bar')
+  if(dosEl) dosEl.textContent = state.dosage.toFixed(1)
+  if(dosBar){
+    const fillPercent = Math.min(100, (state.dosage / 5) * 100)
+    dosBar.style.width = fillPercent + '%'
+  }
+  
+  // Warn if dosage gets high
+  if(state.dosage > 2.5 && state.temp > 300){
+    setAnnunciator('SEC', 'blink')
+  }
+}
+
+// --- Mosaic rendering (161 cores) ---
+function renderMosaic(count = 161){
+  const svg = document.getElementById('reactor-mosaic')
+  if(!svg) return
+  while(svg.firstChild) svg.removeChild(svg.firstChild)
+  const w = 200, h = 240
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+  const cx = w/2, cy = h*0.48
+
+  // Create a square grid larger than needed, then pick the `count` cells closest to center.
+  const base = Math.ceil(Math.sqrt(count))
+  const n = base + 6 // padding to allow a circular crop
+  const tile = 8
+  const gap = 2
+  const step = tile + gap
+  const grid = []
+  const startX = cx - (n-1)/2 * step
+  const startY = cy - (n-1)/2 * step
+
+  for(let row=0; row<n; row++){
+    for(let col=0; col<n; col++){
+      const x = startX + col * step
+      const y = startY + row * step
+      const dx = x - cx
+      const dy = y - cy
+      const dist = Math.sqrt(dx*dx + dy*dy)
+      grid.push({x,y,dist,row,col})
+    }
+  }
+
+  // sort by distance to center and take the nearest `count` cells
+  grid.sort((a,b)=>a.dist-b.dist)
+  const chosen = grid.slice(0, count)
+
+  // render chosen tiles (as small squares to mimic tiled core mosaic)
+  chosen.forEach((cell,i)=>{
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
+    rect.setAttribute('x', (cell.x - tile/2).toFixed(2))
+    rect.setAttribute('y', (cell.y - tile/2).toFixed(2))
+    rect.setAttribute('width', tile)
+    rect.setAttribute('height', tile)
+    const hue = 48 + (i % 18)
+    const powerFactor = Math.min(1, state.power/120)
+    const light = 44 + Math.round(powerFactor * 44)
+    rect.setAttribute('fill', `hsl(${hue} ${85}% ${light}%)`)
+    rect.setAttribute('class','mosaic-core')
+    rect.dataset.index = i+1
+    rect.addEventListener('click', ()=>{
+      log(`Kern #${i+1} ausgewählt`)
+      rect.setAttribute('stroke','#fff')
+      setTimeout(()=>rect.removeAttribute('stroke'),300)
+    })
+    svg.appendChild(rect)
+  })
+}
+
+// call mosaic on load and when power changes
+renderMosaic(161)
+
+// --- View switching logic ---
+function switchView(name){
+  // menu
+  document.querySelectorAll('.side-menu li').forEach(li=>{
+    if(li.dataset.view === name) li.classList.add('active')
+    else li.classList.remove('active')
+  })
+  // views
+  document.querySelectorAll('.view').forEach(v=>{
+    if(v.id === `view-${name}`) v.classList.add('active')
+    else v.classList.remove('active')
+  })
+  // right panels: show corresponding right panel only
+  document.querySelectorAll('.right-panel').forEach(p=>{
+    if(p.id === `right-${name}`) p.removeAttribute('hidden')
+    else p.setAttribute('hidden','')
+  })
+  // trigger specific updates
+  if(name === 'reactor') renderMosaic(161)
+  if(name === 'security') updateSecurityView()
+  if(name === 'turbine') updateTurbineView()
+}
+
+document.querySelectorAll('.side-menu li').forEach(li=>{
+  li.addEventListener('click', ()=>{
+    const name = li.dataset.view
+    if(name) switchView(name)
+  })
+})
+
+function updateSecurityView(){
+  // placeholder: add dynamic status updates here
+}
+
+// --- ANNUNCIATOR: manage lamps and monotone alarm ---
+const annunciators = {
+  WATER: {state: 'ok'},
+  PRESS: {state: 'ok'},
+  TEMP: {state: 'ok'},
+  PUMP: {state: 'ok'},
+  SCRAM: {state: 'ok'},
+  SEC: {state: 'ok'}
+}
+let annAudio = null
+let annOsc = null
+function setAnnunciator(key, mode){
+  if(!annunciators[key]) return
+  annunciators[key].state = mode // 'ok' | 'blink' | 'on'
+  const el = document.querySelector(`.annunciator .lamp[data-key="${key}"]`)
+  if(!el) return
+  el.classList.remove('active','blink')
+  if(mode === 'on') el.classList.add('active')
+  if(mode === 'blink') el.classList.add('blink','active')
+  // audio: if any lamp is blink or on, start monotone
+  const any = Object.values(annunciators).some(a=>a.state==='blink' || a.state==='on')
+  if(any) startAnnunciatorTone()
+  else stopAnnunciatorTone()
+}
+
+function startAnnunciatorTone(){
+  if(annAudio) return
+  try{
+    annAudio = new (window.AudioContext || window.webkitAudioContext)()
+    annOsc = annAudio.createOscillator()
+    const g = annAudio.createGain()
+    annOsc.type = 'sine'
+    annOsc.frequency.value = 720
+    g.gain.value = 0.0001
+    annOsc.connect(g); g.connect(annAudio.destination)
+    annOsc.start()
+    g.gain.exponentialRampToValueAtTime(0.06, annAudio.currentTime + 0.02)
+  }catch(e){console.error('ann audio failed',e)}
+}
+function stopAnnunciatorTone(){
+  if(!annAudio) return
+  try{ annAudio.close() }catch(e){}
+  annAudio = null; annOsc = null
+}
+
+// init annunciator visuals
+Object.keys(annunciators).forEach(k=> setAnnunciator(k,'ok'))
+
+// --- AZ-5 emergency (glass cover + heavy button) ---
+const az5Cover = document.getElementById('az5-cover')
+const az5Button = document.getElementById('az5-button')
+let az5Open = false
+if(az5Cover) az5Cover.addEventListener('click', ()=>{ az5Open = !az5Open; az5Cover.classList.toggle('open', az5Open) })
+if(az5Button){
+  az5Button.addEventListener('click', ()=>{
+    if(!az5Open){ log('AZ-5: Glasabdeckung ist geschlossen! Öffnen zuerst.') ; return }
+    triggerAZ5()
+  })
+}
+
+function triggerAZ5(){
+  log('AZ-5 gedrückt! Notabschaltung aktiv.')
+  // mechanical click
+  try{
+    const c = new (window.AudioContext || window.webkitAudioContext)()
+    const o = c.createOscillator(); const g = c.createGain()
+    o.type='square'; o.frequency.value = 120
+    g.gain.value = 0.0001; o.connect(g); g.connect(c.destination)
+    o.start(); g.gain.exponentialRampToValueAtTime(0.6, c.currentTime + 0.005)
+    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.15)
+    o.stop(c.currentTime + 0.16)
+    setTimeout(()=>{ try{ c.close() }catch(e){} }, 300)
+  }catch(e){console.error(e)}
+
+  // immediate SCRAM behavior: cut power, stop reactor, play insertion hum
+  state.running = false
+  state.manualControl = 0
+  // animate rapid power drop
+  const startP = state.power
+  const callBus = {
+    // mapping: dial number -> array of room keys
+    mapping: {
+      '100': ['security'],
+      '117': ['reactor'],
+      '118': ['turbine'],
+      '119': ['generator'],
+      '120': ['chemlab'],
+      '121': ['kantine'],
+      '122': ['umkleiden'],
+      '123': ['reactorhall'],
+      '124': ['pumpenhaus'],
+      '125': ['brennstofflager']
+    },
+    activeCalls: {},
+    call(number, meta = {}){
+      const targets = this.mapping[number] || []
+      if(!targets.length) return null
+      const callId = Date.now() + '-' + Math.random().toString(36).slice(2,8)
+      this.activeCalls[callId] = { number, targets, meta }
+      targets.forEach(room => window.dispatchEvent(new CustomEvent('incomingCall', { detail: { callId, number, room, meta } })))
+      return callId
+    },
+    end(callId){
+      const call = this.activeCalls[callId]
+      if(!call) return
+      call.targets.forEach(room => window.dispatchEvent(new CustomEvent('callEnded', { detail: { callId, number: call.number, room } })))
+      delete this.activeCalls[callId]
+    }
+  }
+  const temp = state.temp
+  const press = state.pressure
+  const tNeedle = document.getElementById('needle-temp')
+  const pNeedle = document.getElementById('needle-press')
+  if(!tNeedle || !pNeedle) return
+  // map temp 0..800 -> -60..60 degrees
+  const tAngle = Math.max(-60, Math.min(60, (temp/800)*120 - 60))
+  const pAngle = Math.max(-60, Math.min(60, ((press-80)/120)*120 - 60))
+  // jitter if high temp
+  let jitter = 0
+  if(temp > 350 && temp < 500 && Math.random() < 0.15) jitter = (Math.random()-0.5)*4
+  // stuck behaviour
+  if(temp > 580){
+    // set annunciator and freeze needles
+    setAnnunciator('TEMP','on')
+  } else {
+    setAnnunciator('TEMP', temp>400? 'blink' : 'ok')
+    tNeedle.setAttribute('transform', `rotate(${tAngle + jitter} 110 90)`)
+    pNeedle.setAttribute('transform', `rotate(${pAngle} 110 90)`)
+  }
+}
+
+// --- Telephone system and global call bus ---
+// keep legacy security phone API but add multi-room support
+let phoneState = 'idle' // legacy single security phone state
+let phoneAudioCtx = null
+let phoneOscs = []
+
+// per-room phone state and audio
+const roomPhoneState = {}
+
+const callBus = {
+  mapping: { '117': ['reactor'], '118': ['turbine'] },
+  activeCalls: {},
+  call(number, meta = {}){
+    const targets = this.mapping[number] || []
+    if(!targets.length) return null
+    const callId = Date.now() + '-' + Math.random().toString(36).slice(2,8)
+    this.activeCalls[callId] = { number, targets, meta }
+    targets.forEach(room => window.dispatchEvent(new CustomEvent('incomingCall', { detail: { callId, number, room, meta } })))
+    return callId
+  },
+  end(callId){
+    const call = this.activeCalls[callId]
+    if(!call) return
+    call.targets.forEach(room => window.dispatchEvent(new CustomEvent('callEnded', { detail: { callId, number: call.number, room } })))
+    delete this.activeCalls[callId]
+  }
+}
+
+function startPhoneRing(){
+  // legacy security phone rings locally (keeps backwards compatibility)
+  if(phoneState !== 'idle') return
+  phoneState = 'ringing'
+  document.getElementById('phone-status') && (document.getElementById('phone-status').textContent = 'Klingelt...')
+  document.getElementById('phone-answer')?.removeAttribute('hidden')
+  document.getElementById('phone-hang')?.removeAttribute('hidden')
+  try{
+    phoneAudioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const now = phoneAudioCtx.currentTime
+    const g = phoneAudioCtx.createGain(); g.gain.value = 0.0001; g.connect(phoneAudioCtx.destination); g.gain.exponentialRampToValueAtTime(0.06, now + 0.02)
+    const f1 = phoneAudioCtx.createOscillator(); f1.type='sine'; f1.frequency.value = 440
+    const f2 = phoneAudioCtx.createOscillator(); f2.type='sine'; f2.frequency.value = 480
+    f1.connect(g); f2.connect(g)
+    f1.start(now); f2.start(now)
+    phoneOscs = [f1,f2,g]
+    let on = true
+    const alt = setInterval(()=>{
+      if(!phoneAudioCtx) { clearInterval(alt); return }
+      const t = phoneAudioCtx.currentTime
+      if(on){ g.gain.setValueAtTime(0.06, t); } else { g.gain.setValueAtTime(0.0001, t) }
+      on = !on
+    }, 600)
+    phoneOscs.alt = alt
+  }catch(e){console.error('phone ring failed',e)}
+}
+
+function stopPhoneAudio(){
+  if(phoneOscs.alt) { clearInterval(phoneOscs.alt); phoneOscs.alt = null }
+  try{ if(phoneOscs[0]) phoneOscs[0].stop(); if(phoneOscs[1]) phoneOscs[1].stop() }catch(e){}
+  try{ if(phoneOscs[2]) phoneOscs[2].disconnect() }catch(e){}
+  phoneOscs = []
+  try{ if(phoneAudioCtx) phoneAudioCtx.close() }catch(e){}
+  phoneAudioCtx = null
+}
+
+function answerPhone(){
+  // legacy security answer
+  if(phoneState !== 'ringing') return
+  stopPhoneAudio()
+  phoneState = 'incall'
+  document.getElementById('phone-status') && (document.getElementById('phone-status').textContent = 'Im Gespräch')
+  document.getElementById('phone-answer')?.setAttribute('hidden','')
+  document.getElementById('phone-call')?.setAttribute('hidden','')
+  try{
+    phoneAudioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const g = phoneAudioCtx.createGain(); g.gain.value = 0.0001; g.connect(phoneAudioCtx.destination); g.gain.exponentialRampToValueAtTime(0.02, phoneAudioCtx.currentTime + 0.02)
+    const nbuf = phoneAudioCtx.createBuffer(1, phoneAudioCtx.sampleRate*1, phoneAudioCtx.sampleRate)
+    const data = nbuf.getChannelData(0); for(let i=0;i<data.length;i++) data[i] = (Math.random()*2-1)*0.02
+    const src = phoneAudioCtx.createBufferSource(); src.buffer = nbuf; src.loop = true
+    const lp = phoneAudioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 800
+    src.connect(lp); lp.connect(g); src.start()
+    phoneOscs = [src, lp, g]
+  }catch(e){console.error('phone in-call failed',e)}
+  log('Telefon: Gespräch begonnen')
+}
+
+function hangPhone(){
+  // legacy hang
+  stopPhoneAudio()
+  phoneState = 'idle'
+  document.getElementById('phone-status') && (document.getElementById('phone-status').textContent = 'Bereit')
+  document.getElementById('phone-answer')?.setAttribute('hidden','')
+  document.getElementById('phone-hang')?.setAttribute('hidden','')
+  document.getElementById('phone-call')?.removeAttribute('hidden')
+  log('Telefon: Gespräch beendet')
+}
+
+// per-room ring/answer/hang
+function startRoomRing(room){
+  roomPhoneState[room] = roomPhoneState[room] || {}
+  if(roomPhoneState[room].ringing) return
+  roomPhoneState[room].ringing = true
+  const statusEl = document.getElementById('phone-status-' + room)
+  if(statusEl) statusEl.textContent = 'RING'
+  document.querySelectorAll('.phone-answer-room[data-room="'+room+'"]')?.forEach(b=>b.hidden = false)
+  document.querySelectorAll('.phone-hang-room[data-room="'+room+'"]')?.forEach(b=>b.hidden = true)
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const g = ctx.createGain(); g.gain.value = 0.0001; g.connect(ctx.destination); g.gain.exponentialRampToValueAtTime(0.04, ctx.currentTime + 0.02)
+    const f = ctx.createOscillator(); f.type='sine'; f.frequency.value = 520
+    f.connect(g); f.start()
+    const alt = setInterval(()=>{ try{ g.gain.setValueAtTime(g.gain.value>0.001?0.0001:0.04, ctx.currentTime) }catch(e){} }, 600)
+    roomPhoneState[room].audio = { ctx, osc: f, gain: g, alt }
+  }catch(e){console.error('room ring failed',e)}
+}
+
+function answerRoom(room){
+  const st = roomPhoneState[room]
+  if(!st || !st.ringing) return
+  // stop ring
+  if(st.audio){ try{ clearInterval(st.audio.alt); st.audio.osc.stop(); st.audio.gain.disconnect(); st.audio.ctx.close() }catch(e){} }
+  roomPhoneState[room].ringing = false
+  roomPhoneState[room].incall = true
+  const statusEl = document.getElementById('phone-status-' + room)
+  if(statusEl) statusEl.textContent = 'Im Gespräch'
+  document.querySelectorAll('.phone-answer-room[data-room="'+room+'"]')?.forEach(b=>b.hidden = true)
+  document.querySelectorAll('.phone-hang-room[data-room="'+room+'"]')?.forEach(b=>b.hidden = false)
+  log(`Telefon (${room}): Gespräch begonnen`)
+}
+
+function hangRoom(room){
+  const st = roomPhoneState[room]
+  if(st && st.audio){ try{ clearInterval(st.audio.alt); st.audio.osc.stop(); st.audio.gain.disconnect(); st.audio.ctx.close() }catch(e){} }
+  roomPhoneState[room] = {}
+  const statusEl = document.getElementById('phone-status-' + room)
+  if(statusEl) statusEl.textContent = 'Bereit'
+  document.querySelectorAll('.phone-answer-room[data-room="'+room+'"]')?.forEach(b=>b.hidden = false)
+  document.querySelectorAll('.phone-hang-room[data-room="'+room+'"]')?.forEach(b=>b.hidden = true)
+  log(`Telefon (${room}): Gespräch beendet`)
+}
+
+// global incoming call events -> ring room phones
+window.addEventListener('incomingCall', (e)=>{
+  const { callId, number, room } = e.detail
+  // attach callId to buttons for later reference
+  document.querySelectorAll('.phone-answer-room[data-room="'+room+'"]')?.forEach(b=>b.dataset.callId = callId)
+  document.querySelectorAll('.phone-hang-room[data-room="'+room+'"]')?.forEach(b=>b.dataset.callId = callId)
+  startRoomRing(room)
+})
+
+window.addEventListener('callEnded', (e)=>{
+  const { callId, room } = e.detail
+  hangRoom(room)
+})
+
+// security dial button -> route via callBus
+document.getElementById('phone-call')?.addEventListener('click', ()=>{
+  const num = document.getElementById('phone-number')?.value.trim()
+  if(!num) return
+  try{ if(window.AudioContext && window.AudioContext.state === 'suspended') window.AudioContext.resume && window.AudioContext.resume() }catch(e){}
+  const callId = callBus.call(num, { from: 'security' })
+  if(!callId){ alert('Unbekannte Nummer: ' + num); return }
+  const status = document.getElementById('phone-status')
+  if(status) status.textContent = 'Wählt ' + num
+  log('Telefon: Anruf initiiert ' + num)
+})
+
+// room answer/hang buttons
+document.querySelectorAll('.phone-answer-room').forEach(b=>{
+  b.addEventListener('click', (ev)=>{
+    const room = ev.target.dataset.room
+    const callId = ev.target.dataset.callId
+    answerRoom(room)
+    if(callId){ const call = callBus.activeCalls[callId]; if(call) call.targets.forEach(r=>{ if(r!==room) hangRoom(r) }) }
+  })
+})
+
+document.querySelectorAll('.phone-hang-room').forEach(b=>{
+  b.addEventListener('click', (ev)=>{
+    const room = ev.target.dataset.room
+    const callId = ev.target.dataset.callId
+    hangRoom(room)
+    if(callId) callBus.end(callId)
+  })
+})
+
+// --- Security slips (stampable documents) ---
+document.querySelectorAll('.btn-approve').forEach(btn => {
+  btn.addEventListener('click', (ev) => {
+    const slip = ev.target.closest('.slip')
+    if(!slip) return
+    stampSlip(slip, 'approved')
+  })
+})
+document.querySelectorAll('.btn-deny').forEach(btn => {
+  btn.addEventListener('click', (ev) => {
+    const slip = ev.target.closest('.slip')
+    if(!slip) return
+    stampSlip(slip, 'denied')
+  })
+})
+
+// Short stamp sound generator (plays a quick percussive/noise thud)
+function playStampSound(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const now = ctx.currentTime
+    const master = ctx.createGain(); master.gain.value = 1; master.connect(ctx.destination)
+
+    // short noise burst for the cloth/paper sound
+    const len = Math.floor(ctx.sampleRate * 0.06)
+    const buffer = ctx.createBuffer(1, len, ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for(let i=0;i<len;i++){
+      // decaying noise
+      data[i] = (Math.random()*2 - 1) * (1 - i/len) * 0.6
+    }
+    const src = ctx.createBufferSource(); src.buffer = buffer
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1600
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, now)
+    g.gain.exponentialRampToValueAtTime(0.5, now + 0.005)
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.08)
+    src.connect(lp); lp.connect(g); g.connect(master)
+    src.start(now)
+    // small low-frequency thud (body)
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(120, now)
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, now); og.gain.exponentialRampToValueAtTime(0.25, now + 0.004); og.gain.exponentialRampToValueAtTime(0.0001, now + 0.12)
+    o.connect(og); og.connect(master); o.start(now)
+
+    // stop and close after short time
+    setTimeout(()=>{ try{ src.stop(); o.stop(); ctx.close() }catch(e){} }, 300)
+  }catch(e){ console.error('stamp audio failed', e) }
+}
+
+function stampSlip(slipEl, status){
+  if(slipEl.classList.contains('approved') || slipEl.classList.contains('denied')) return
+  const id = slipEl.dataset.id || '??'
+  slipEl.classList.remove('approved','denied')
+  slipEl.classList.add(status)
+  const stamp = slipEl.querySelector('.stamp')
+  if(stamp){
+    stamp.classList.remove('approved','denied')
+    stamp.classList.add(status)
+    stamp.textContent = status === 'approved' ? 'APPROVED' : 'DENIED'
+  }
+  // play a short stamp sound (triggered by user click)
+  try{ playStampSound() }catch(e){ console.error('play stamp failed', e) }
+  // disable buttons
+  slipEl.querySelectorAll('button').forEach(b=>b.disabled = true)
+  log(`Security: Slip #${id} ${status.toUpperCase()}`)
+}
+
+// Drag-and-drop for slips
+let draggingSlip = null
+document.querySelectorAll('.slip[draggable="true"]').forEach(s => {
+  s.addEventListener('dragstart', ev => {
+    draggingSlip = s
+    ev.dataTransfer.setData('text/plain', s.dataset.id || '')
+    s.classList.add('dragging')
+  })
+  s.addEventListener('dragend', ev => {
+    draggingSlip = null
+    s.classList.remove('dragging')
+  })
+})
+
+const slipBoard = document.getElementById('slip-board')
+const slipSource = document.getElementById('slip-source')
+;[slipBoard, slipSource].forEach(el => {
+  if(!el) return
+  el.addEventListener('dragover', ev => { ev.preventDefault(); el.classList.add('highlight') })
+  el.addEventListener('dragleave', ev => { el.classList.remove('highlight') })
+  el.addEventListener('drop', ev => {
+    ev.preventDefault(); el.classList.remove('highlight')
+    const id = ev.dataTransfer.getData('text/plain')
+    // find the element by data-id (prefer draggingSlip)
+    const node = draggingSlip || document.querySelector(`.slip[data-id="${id}"]`)
+    if(node && el !== node.parentElement){
+      el.appendChild(node)
+      // if dropped into target, show actions; if moved back to source, hide
+      const actions = node.querySelector('.slip-actions')
+      if(el.id === 'slip-board'){
+        if(actions) actions.style.display = 'flex'
+      } else {
+        if(actions) actions.style.display = 'none'
+      }
+    }
+  })
+})
+
+
+let turbineRunning = false
+function updateTurbineView(){
+  const rpmEl = document.getElementById('rpm')
+  if(!rpmEl) return
+  const target = turbineRunning ? 3600 : 0
+  // smooth approach
+  const current = Number(rpmEl.textContent || 0)
+  const next = current + (target - current) * 0.12
+  rpmEl.textContent = Math.round(next)
+}
+
+  // global volume slider handler: update `alarmVolume` and adjust live gain if siren running
+  const volElGlobal = document.getElementById('alarm-volume')
+  if(volElGlobal){
+    alarmVolume = Number(volElGlobal.value)
+    volElGlobal.addEventListener('input', (e)=>{
+      alarmVolume = Number(e.target.value)
+      if(sirenNodes && sirenNodes.master && audioContext){
+        try{
+          const mapped = Math.max(0, alarmVolume/100 * 0.7)
+          const now = audioContext.currentTime
+          sirenNodes.master.gain.cancelScheduledValues(now)
+          sirenNodes.master.gain.linearRampToValueAtTime(mapped, now + 0.06)
+        }catch(e){ console.error('volume adjust failed', e) }
+      }
+    })
+  }
+
+document.getElementById('turbine-start')?.addEventListener('click', ()=>{ turbineRunning = true; log('Turbine startet') })
+document.getElementById('turbine-stop')?.addEventListener('click', ()=>{ turbineRunning = false; log('Turbine gestoppt') })
+// --- Security alarm (visual + audio) ---
+let alarmActive = false
+let alarmVisualInterval = null
+let sirenTimer = null
+let audioContext = null
+let sirenNodes = null
+
+function startAlarm(){
+  if(alarmActive) return
+  alarmActive = true
+  log('Security Alarm ausgelöst')
+  const banner = document.getElementById('security-alarm-right')
+  if(banner){ banner.hidden = false; banner.classList.add('active') }
+  alarmVisualInterval = setInterval(()=>{ const b = document.getElementById('security-alarm-right'); if(b) b.classList.toggle('active') }, 700)
+
+  try{
+    audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    const ctx = audioContext
+
+    // master gain (volume controllable)
+    const master = ctx.createGain()
+    master.gain.setValueAtTime(0.0001, ctx.currentTime)
+    master.connect(ctx.destination)
+    // use global alarmVolume (0..100 -> 0..0.7)
+    const targetVol = Math.max(0.02, alarmVolume/100 * 0.7)
+    master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
+
+    // main oscillators for siren body
+    // lower base frequencies for a deeper siren
+    const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, ctx.currentTime)
+    const osc2 = ctx.createOscillator(); osc2.type = 'sine'; osc2.frequency.setValueAtTime(700, ctx.currentTime)
+    const oscGain = ctx.createGain(); oscGain.gain.value = 0.5
+    const osc2Gain = ctx.createGain(); osc2Gain.gain.value = 0.45
+    osc.connect(oscGain); oscGain.connect(master)
+    osc2.connect(osc2Gain); osc2Gain.connect(master)
+
+    // noise layer to make it harsher
+    const bufferSize = ctx.sampleRate * 1.0
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+    const data = noiseBuffer.getChannelData(0)
+    for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2 - 1) * 0.5
+    const noiseSrc = ctx.createBufferSource(); noiseSrc.buffer = noiseBuffer; noiseSrc.loop = true
+    const noiseFilter = ctx.createBiquadFilter(); noiseFilter.type = 'bandpass'; noiseFilter.frequency.value = 600; noiseFilter.Q.value = 0.8
+    const noiseGain = ctx.createGain(); noiseGain.gain.value = 0.03
+    noiseSrc.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(master)
+
+    osc.start(); osc2.start(); noiseSrc.start()
+    sirenNodes = {osc, osc2, noiseSrc, master, oscGain, osc2Gain, noiseGain, noiseFilter}
+
+    // realtime control will be handled by a global listener (outside)
+
+    // frequency sweep using a timed loop for smooth modulation
+    const rate = 0.25 // Hz for sweep (longer cycles)
+    const fMid = 360
+    const fAmp = 240
+    const startTime = ctx.currentTime
+    sirenTimer = setInterval(()=>{
+      const t = ctx.currentTime - startTime
+      const angle = 2 * Math.PI * rate * t
+      const f1 = fMid + fAmp * Math.sin(angle)
+      const f2 = f1 * 1.9
+      osc.frequency.setValueAtTime(f1, ctx.currentTime)
+      osc2.frequency.setValueAtTime(f2, ctx.currentTime)
+      // subtle amplitude modulation
+      master.gain.setValueAtTime(0.5 + 0.15 * Math.abs(Math.sin(angle)), ctx.currentTime)
+      // move noise filter slightly (lower center)
+      noiseFilter.frequency.setValueAtTime(600 + 300 * (0.5 + 0.5 * Math.sin(angle)), ctx.currentTime)
+    }, 40)
+  }catch(e){
+    console.error('Audio failed', e)
+  }
+}
+
+function stopAlarm(){
+  if(!alarmActive) return
+  alarmActive = false
+  log('Security Alarm gestoppt')
+  const banner = document.getElementById('security-alarm-right')
+  if(banner){ banner.hidden = true; banner.classList.remove('active') }
+  if(alarmVisualInterval){ clearInterval(alarmVisualInterval); alarmVisualInterval = null }
+  if(sirenTimer){ clearInterval(sirenTimer); sirenTimer = null }
+  if(sirenNodes){
+    try{ sirenNodes.osc.stop(); sirenNodes.osc.disconnect() }catch(e){}
+    try{ sirenNodes.osc2.stop(); sirenNodes.osc2.disconnect() }catch(e){}
+    try{ sirenNodes.noiseSrc.stop(); sirenNodes.noiseSrc.disconnect() }catch(e){}
+    sirenNodes = null
+  }
+  if(audioContext){ audioContext.close(); audioContext = null }
+}
+
+document.getElementById('raise-alarm')?.addEventListener('click', ()=> startAlarm())
+document.getElementById('stop-alarm')?.addEventListener('click', ()=> stopAlarm())
+
+// periodically update turbine rpm while view is visible
+setInterval(()=>{
+  const active = document.querySelector('.view.active')?.id
+  if(active === 'view-turbine') updateTurbineView()
+}, 500)
 
 // simple physics loop
 setInterval(()=>{
-  // control rod effect: more insertion => less reactivity
-  const reactivity = (100 - state.rod)/100 // 0..1
-  if(state.running){
-    // power tends toward reactivity*100
+  // determine reactivity: manual mode uses manualControl, otherwise running drives reactivity
+  let reactivity = 0
+  if(state.manualMode){
+    reactivity = state.manualControl/100
+  } else {
+    reactivity = state.running ? 0.85 : 0
+  }
+  if(state.running || state.manualMode){
     state.power += (reactivity*100 - state.power) * 0.03
   } else {
     state.power += (0 - state.power) * 0.08
@@ -118,7 +790,7 @@ setInterval(()=>{
   // safety checks
   if(state.temp > 600){
     // catastrophic threshold — force SCRAM and warn
-    state.rod = 100
+    state.manualControl = 0
     state.running = false
     log('ALARM: Temperatur kritisch — SCRAM ausgelöst')
   } else if(state.temp > 400){
@@ -130,8 +802,165 @@ setInterval(()=>{
 }, 500)
 
 // initial render
-rodVal.textContent = state.rod
-rodSlider.value = state.rod
 cooling.checked = state.cooling
 updateUI()
-log('Simulator geladen')
+log('Simulator geladen (ohne Regelstab-UI)')
+
+// --- RESET Button with password (4532) ---
+document.getElementById('reset-btn')?.addEventListener('click', ()=>{
+  const pwd = prompt('⚠️ RESET-PASSWORT (Anlagenleiter):', '')
+  if(pwd !== '4532'){
+    alert('❌ Falsches Passwort!')
+
+// --- Generate many slips placed on the table center (not in the panel) ---
+function setupSlipInteractions(slip){
+  slip.setAttribute('draggable','true')
+  slip.classList.remove('dragging')
+  slip.addEventListener('dragstart', ev => {
+    draggingSlip = slip
+    try{ ev.dataTransfer.setData('text/plain', slip.dataset.id || '') }catch(e){}
+    slip.classList.add('dragging')
+  })
+  slip.addEventListener('dragend', ev => {
+    draggingSlip = null
+    slip.classList.remove('dragging')
+  })
+  // wire approve/deny if present
+  const a = slip.querySelector('.btn-approve')
+  const d = slip.querySelector('.btn-deny')
+  if(a) a.addEventListener('click', ()=> stampSlip(slip,'approved'))
+  if(d) d.addEventListener('click', ()=> stampSlip(slip,'denied'))
+}
+
+function createTableCenterIfMissing(){
+  const secPanel = document.querySelector('#view-security .security-panel')
+  if(!secPanel) return null
+  let table = document.getElementById('table-center')
+  if(table) return table
+  table = document.createElement('div')
+  table.id = 'table-center'
+  table.className = 'table-center'
+  const note = document.createElement('div'); note.className = 'note'; note.textContent = 'Tischmitte: Lege die Blätter hier ab';
+  table.appendChild(note)
+  // insert table before the existing slip-board-wrap so UI still shows right box
+  const slipsWrap = secPanel.querySelector('.slip-board-wrap')
+  if(slipsWrap) secPanel.insertBefore(table, slipsWrap)
+  else secPanel.appendChild(table)
+  return table
+}
+
+function randomFrom(arr){ return arr[Math.floor(Math.random()*arr.length)] }
+
+function generateRandomSlipContent(i){
+  const names = ['Ivanov','Petrov','Sidorov','Kovalenko','Novik','Mikhailov','Borisov','Sergeev','Alexeev','Dmitriev']
+  const reasons = [
+    'Wartung beantragt','Zugang zur Halle','Ersatzteilbestellung','Maskenausgabe','Kontrollmessung','Schichtwechsel','Reinigung','Materialtransport','Kurzzeit-Einsatz','Temperaturkontrolle'
+  ]
+  const extras = ['Dringend','Routine','Genehmigt auf Zeit','Antrag ohne Unterschrift','Mit Begleitung','Sicherheitsprüfung']
+  const name = randomFrom(names)
+  const reason = randomFrom(reasons)
+  const extra = randomFrom(extras)
+  return `<strong>Anfrage ${i}:</strong> ${reason}. Name: ${name}. ${extra}.` 
+}
+
+function generateTableSlips(count = 100){
+  const table = createTableCenterIfMissing()
+  if(!table) return
+  // clear existing slips in table
+  Array.from(table.querySelectorAll('.slip')).forEach(s=>s.remove())
+  // also clear original slip-source so we don't duplicate
+  const slipSource = document.getElementById('slip-source')
+  if(slipSource) slipSource.innerHTML = '<div class="source-title">Alte Zettel (leer)</div>'
+
+  const placedRects = []
+  const maxAttempts = 200
+  // container size
+  const rect = table.getBoundingClientRect()
+  const W = Math.max(300, rect.width || 700)
+  const H = Math.max(220, rect.height || 320)
+
+  for(let i=1;i<=count;i++){
+    const slip = document.createElement('div')
+    slip.className = 'slip'
+    slip.dataset.id = 'T' + i
+    slip.innerHTML = `
+      <div class="slip-body">${generateRandomSlipContent(i)}</div>
+      <div class="slip-actions" style="display:none">
+        <button class="btn-approve">Approve</button>
+        <button class="btn-deny">Deny</button>
+      </div>
+      <div class="stamp" aria-hidden="true"></div>
+    `
+    // temporarily append invisibly to measure
+    slip.style.visibility = 'hidden'
+    table.appendChild(slip)
+    // measure
+    const srect = slip.getBoundingClientRect()
+    const sw = Math.min(220, srect.width || 170)
+    const sh = Math.min(120, srect.height || 80)
+
+    // find a non-overlapping position
+    let placed = false
+    for(let attempt=0; attempt<maxAttempts && !placed; attempt++){
+      const x = Math.floor(Math.random() * Math.max(1, W - sw - 20)) + 10
+      const y = Math.floor(Math.random() * Math.max(1, H - sh - 20)) + 30
+      // check overlap
+      let ok = true
+      for(const r of placedRects){
+        if(!(x + sw < r.x || x > r.x + r.w || y + sh < r.y || y > r.y + r.h)){ ok = false; break }
+      }
+      if(ok){ slip.style.left = x + 'px'; slip.style.top = y + 'px'; placedRects.push({x,y,w:sw,h:sh}); placed = true }
+    }
+    if(!placed){ // fallback: push to grid
+      const gx = 12 + (i%8) * (sw + 8)
+      const gy = 40 + Math.floor(i/8) * (sh + 8)
+      slip.style.left = gx + 'px'; slip.style.top = gy + 'px'
+      placedRects.push({x:gx,y:gy,w:sw,h:sh})
+    }
+    // small random rotation for realism
+    const rot = (Math.random()*30 - 15).toFixed(1)
+    slip.style.transform = `rotate(${rot}deg)`
+    slip.style.visibility = 'visible'
+    // ensure actions hidden initially (only show when dropped into board)
+    const actions = slip.querySelector('.slip-actions')
+    if(actions) actions.style.display = 'none'
+    // wire interactions
+    setupSlipInteractions(slip)
+  }
+}
+
+// generate 100 slips on load for the security table
+generateTableSlips(100)
+    log('SICHERHEIT: Reset-Versuch mit falschem Passwort')
+    return
+  }
+  // Reset all systems
+  state.power = 0
+  state.temp = 20
+  state.pressure = 101.3
+  state.dosage = 0.2
+  state.running = false
+  state.manualMode = false
+  state.manualControl = 50
+  state.cooling = true
+  cooling.checked = true
+  document.getElementById('manual-mode').checked = false
+  document.getElementById('manual-slider').value = 50
+  document.getElementById('knob-pump').value = 50
+  document.getElementById('knob-turbine').value = 50
+  // Stop turbine
+  turbineRunning = false
+  // Clear annunciators
+  Object.keys(annunciators).forEach(k => setAnnunciator(k, 'ok'))
+  // Close AZ-5 cover
+  az5Open = false
+  if(az5Cover) az5Cover.classList.remove('open')
+  // Stop alarm if active
+  if(alarmActive) stopAlarm()
+  // Stop phone rings
+  hangPhone()
+  Object.keys(roomPhoneState).forEach(room => hangRoom(room))
+  // Update UI
+  updateUI()
+  log('✓ SYSTEM ZURÜCKGESETZT (Anlagenleiter)')
+})

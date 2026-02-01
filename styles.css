@@ -4,7 +4,16 @@ header{padding:14px 20px;background:#0b0b0d;border-bottom:2px solid #2b2b2b}
 header h1{margin:0;font-size:18px;letter-spacing:1px}
 .container{display:flex;gap:18px;padding:18px}
 .left{flex:1}
+.side-menu{width:200px;background:linear-gradient(180deg,#0b0b0b,#0f0f0f);padding:12px;border-radius:8px;border:1px solid #232323;align-self:flex-start}
+.side-menu ul{list-style:none;padding:6px;margin:0}
+.side-menu li{padding:10px 12px;margin:8px 0;border-radius:6px;color:#dfeef9;cursor:pointer;background:linear-gradient(180deg,#081314,#061014);border:1px solid rgba(255,255,255,0.02)}
+.side-menu li.active{background:linear-gradient(90deg,#ffd54f,#ff8a00);color:#111;font-weight:700;box-shadow:0 4px 14px rgba(255,140,0,0.12)}
+.side-menu li:hover{filter:brightness(1.05)}
 .right{width:360px;background:linear-gradient(180deg,#0d1113,#061014);padding:18px;border-radius:8px;border:1px solid #263236}
+.right-panel{display:block}
+.right-panel[hidden]{display:none}
+
+.right-panel h2{margin-top:0;color:#ffd54f}
 .core-card{background:linear-gradient(180deg,#0c0f10,#081014);padding:12px;border-radius:8px;border:1px solid #2a2f31;box-shadow:0 6px 18px rgba(0,0,0,0.6)}
 svg{display:block;width:100%}
 #core-glow{transition:opacity 0.2s, fill 0.2s}
@@ -30,6 +39,123 @@ footer{padding:8px 16px;font-size:12px;color:#9aa6b2}
 
 /* Right panel details */
 .right h2{margin-top:0;color:#ffd54f}
+
+/* Mosaic cores */
+#reactor-mosaic{width:100%;height:320px;background:radial-gradient(circle at 50% 40%, rgba(255,200,80,0.03), transparent 30%);} 
+.mosaic-core{stroke:#111;stroke-width:0.6;cursor:pointer;transform-origin:center center}
+.mosaic-core:hover{filter:brightness(1.25);transform:scale(1.06);transition:transform 0.12s}
+
+/* Alarm banner */
+.alarm-banner{display:flex;align-items:center;justify-content:center;padding:8px;margin-top:8px;border-radius:6px;background:linear-gradient(90deg,#3a0b0b,#6b0f0f);color:#fff;font-weight:800;box-shadow:0 6px 18px rgba(107,15,15,0.25);border:2px solid rgba(255,180,180,0.12)}
+.alarm-banner span{letter-spacing:1px}
+.alarm-banner.active{animation:alarm-flash 0.8s linear infinite}
+
+@keyframes alarm-flash{
+	0%{filter:brightness(1)}
+	25%{filter:brightness(1.3)}
+	50%{filter:brightness(0.9)}
+	75%{filter:brightness(1.25)}
+	100%{filter:brightness(1)}
+}
+
+.security-controls{display:flex;gap:8px;margin-top:8px}
+.security-controls button{flex:1;padding:8px;border-radius:6px;border:1px solid #2b2b2b;background:#162022;color:#dff1ff}
+.security-controls button.danger{background:#7a1010;color:#fff;border-color:#4a0a0a}
+
+.vol-label{display:flex;align-items:center;gap:8px;margin-left:8px;color:#cfeaff;font-size:13px}
+.vol-label input[type=range]{width:110px}
+
+/* Phone UI */
+.phone{margin-top:12px;background:linear-gradient(180deg,#071018,#041014);padding:10px;border-radius:8px;border:1px solid #122229;display:flex;gap:8px;align-items:center}
+.phone-display{flex:1;padding:8px;border-radius:6px;background:#06121a;color:#cfeaff;text-align:center;border:1px solid #122229}
+.phone-buttons{display:flex;gap:6px}
+.phone-buttons button{padding:8px 10px;border-radius:6px;background:#0f1720;color:#dff1ff;border:1px solid #223033;cursor:pointer}
+.phone-buttons button.danger{background:#7a1010}
+
+/* Slips (stampable documents) in Security */
+.slips{margin-top:14px}
+.slips h3{margin:6px 0;color:#ffd54f}
+.slip{background:linear-gradient(180deg,#0b1416,#061014);border:1px solid #1f2a2b;padding:10px;border-radius:6px;margin-bottom:10px;position:relative;overflow:hidden}
+.slip-body{color:#cfeaff;font-size:13px;line-height:1.2;margin-bottom:8px}
+.slip-actions{display:flex;gap:8px}
+.slip-actions button{padding:6px 10px;border-radius:4px;border:1px solid #233238;background:#0f1720;color:#dff1ff;cursor:pointer}
+.btn-approve{background:linear-gradient(180deg,#163a17,#0f2a0f);border-color:#2f8a2f}
+.btn-deny{background:linear-gradient(180deg,#3a1a1a,#2a0f0f);border-color:#8a2f2f}
+
+.stamp{position:absolute;right:12px;top:12px;width:120px;height:60px;display:flex;align-items:center;justify-content:center;font-family:monospace;font-weight:800;color:transparent;transform:rotate(-18deg);pointer-events:none;opacity:0;transition:opacity 220ms ease}
+.stamp.approved{color:#0b3; border:3px solid rgba(11,51,11,0.25); background:rgba(11,51,11,0.06);box-shadow:0 6px 14px rgba(11,51,11,0.08);opacity:1}
+.stamp.denied{color:#f33; border:3px solid rgba(153,11,11,0.18); background:rgba(153,11,11,0.04);box-shadow:0 6px 14px rgba(153,11,11,0.06);opacity:1}
+
+.slip.approved{border-color:#224422}
+.slip.denied{border-color:#442222}
+
+/* Drag-and-drop boards */
+.slip-board-wrap{display:flex;gap:12px;margin-top:8px}
+.slip-source,.slip-target{flex:1;min-height:160px;padding:8px;border-radius:6px;border:1px dashed rgba(255,255,255,0.03);background:linear-gradient(180deg,#061014,#041010)}
+.source-title,.target-title{font-size:12px;color:#cfeaff;margin-bottom:8px}
+.slip{cursor:grab}
+.slip.dragging{opacity:0.6;transform:scale(0.99)}
+.slip-target.highlight{outline:3px dashed rgba(255,213,79,0.18);box-shadow:inset 0 0 40px rgba(255,140,0,0.02)}
+.slip-source .slip{margin-bottom:8px}
+.slip-target .slip{margin-bottom:8px}
+
+/* Table center where new slips are initially placed */
+.table-center{position:relative;width:100%;height:360px;border-radius:8px;padding:12px;background:linear-gradient(180deg,#071216,#031013);border:1px solid rgba(255,255,255,0.03);overflow:hidden;margin-top:12px}
+.table-center .note{position:absolute;left:8px;top:8px;color:#9fb8c4;font-size:12px}
+.table-center .slip{position:absolute;width:170px;padding:8px;border-radius:6px;margin:0;box-shadow:0 6px 18px rgba(0,0,0,0.6);cursor:grab;transform-origin:center left}
+.table-center .slip .slip-actions{display:none;position:static;margin-top:8px}
+
+
+/* Views */
+.view{display:none}
+.view.active{display:block}
+
+.security-panel ul{margin:8px 0 0 18px}
+.security-panel button{margin-top:8px}
+
+.turbine-panel p{font-weight:700}
+.turbine-panel button{margin-right:8px}
+
+/* Annunciator */
+.annunciator{padding:6px 18px;background:#0b0b0b;border-bottom:2px solid #1f1f1f}
+.annunciator-row{display:flex;gap:8px}
+.annunciator .lamp{width:72px;height:36px;background:#1a1a1a;border-radius:3px;display:flex;align-items:center;justify-content:center;color:#cfeaff;border:1px solid #202020}
+.annunciator .lamp.active{background:linear-gradient(90deg,#ffd54f,#ff8a00);color:#111;box-shadow:0 6px 18px rgba(255,140,0,0.12)}
+.annunciator .lamp.blink{animation:blink 0.8s steps(1) infinite}
+@keyframes blink{50%{opacity:0.2}}
+
+/* AZ-5 button */
+
+.az5{display:inline-block;position:relative;margin-top:10px}
+.az5 .cover{position:absolute;left:50%;top:-6px;transform:translateX(-50%) translateY(0);width:92px;height:52px;border-radius:6px;background:rgba(245,245,255,0.06);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);border:2px solid rgba(255,255,255,0.06);box-shadow:0 6px 18px rgba(0,0,0,0.6);z-index:30;cursor:pointer;transition:transform 260ms cubic-bezier(.2,.9,.3,1), opacity 160ms}
+.az5 .cover::after{content:'';position:absolute;left:8px;top:8px;right:8px;bottom:8px;border-radius:4px;border:1px solid rgba(255,255,255,0.03);}
+.az5-button{width:92px;height:46px;border-radius:6px;background:#9b0b0b;color:#fff;border:3px solid #5b0b0b;font-weight:800;box-shadow:inset 0 -4px 8px rgba(0,0,0,0.5),0 8px 18px rgba(0,0,0,0.6);cursor:pointer;position:relative;z-index:10}
+.az5-button:active{transform:translateY(2px) scale(0.995);}
+.az5 .cover.open{transform:translateX(-50%) translateY(72px);opacity:0}
+
+/* Selsyn knobs */
+.selsyn-controls{display:flex;gap:12px;margin-top:10px}
+.knob-group{flex:1}
+.knob-group label{display:block;margin-bottom:6px;color:#cfeaff}
+.knob-group input[type=range]{width:100%}
+
+/* Analog needles */
+.analog{width:100%;height:80px}
+#analog-needles line{transition:transform 0.18s ease-out}
+
+/* DOSIMETER (Soviet 80s style) */
+.dosimeter{background:linear-gradient(180deg, #1a1a1a, #0d0d0d);border:3px solid #4ade80;border-radius:8px;padding:12px;margin-bottom:12px;font-family:'Courier New',monospace;color:#4ade80;box-shadow:0 0 12px rgba(74,222,128,0.15)}
+.dosimeter-header{font-size:0.85em;font-weight:700;text-align:center;margin-bottom:8px;letter-spacing:1px}
+.dosimeter-readout{font-size:1.8em;font-weight:800;text-align:center;margin-bottom:8px;text-shadow:0 0 8px rgba(74,222,128,0.5)}
+.dosimeter-bar{width:100%;height:16px;background:#0d0d0d;border:1px solid #4ade80;border-radius:3px;overflow:hidden;position:relative}
+.dosimeter-fill{height:100%;background:linear-gradient(90deg, #4ade80 0%, #fbbf24 50%, #ff6b35 100%);width:20%;transition:width 0.3s ease;box-shadow:0 0 8px rgba(74,222,128,0.4)}
+.dosimeter-labels{display:flex;justify-content:space-between;font-size:0.75em;margin-top:6px;color:#a0a0a0}
+
+/* RESET Button (bottom-left) */
+.reset-section{position:fixed;bottom:20px;left:20px;z-index:100}
+.reset-btn{background:linear-gradient(180deg, #3a3a3a, #1a1a1a);border:2px solid #ff6b35;color:#ff6b35;padding:10px 16px;border-radius:6px;font-family:monospace;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.4);transition:all 0.2s}
+.reset-btn:hover{background:linear-gradient(180deg, #4a4a4a, #2a2a2a);box-shadow:0 6px 16px rgba(255,107,53,0.2)}
+.reset-btn:active{transform:scale(0.95)}
 
 /* Responsive */
 @media (max-width:900px){.container{flex-direction:column}.right{width:100%}}
