@@ -733,14 +733,14 @@ function startAlarm(){
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
     // create weighted multi-oscillator stack for a powerful, authoritative tone
-    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(55, ctx.currentTime)
-    const low = ctx.createOscillator(); low.type = 'sine'; low.frequency.setValueAtTime(110, ctx.currentTime)
-    // base voices: lower further for a mighty low-end
-    const body = ctx.createOscillator(); body.type = 'sawtooth'; body.frequency.setValueAtTime(82, ctx.currentTime)
-    // high treble layer (lowered) for texture
-    const screech = ctx.createOscillator(); screech.type = 'triangle'; screech.frequency.setValueAtTime(450, ctx.currentTime)
-    // very high peal for shrill metallic accent
-    const peal = ctx.createOscillator(); peal.type = 'sine'; peal.frequency.setValueAtTime(3000, ctx.currentTime)
+    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(80, ctx.currentTime)
+    const low = ctx.createOscillator(); low.type = 'sine'; low.frequency.setValueAtTime(220, ctx.currentTime)
+    // base voices: raised for a much higher wail
+    const body = ctx.createOscillator(); body.type = 'sawtooth'; body.frequency.setValueAtTime(320, ctx.currentTime)
+    // high treble layer (raised) for brighter texture
+    const screech = ctx.createOscillator(); screech.type = 'triangle'; screech.frequency.setValueAtTime(1350, ctx.currentTime)
+    // very high peal for shrill metallic accent (raised)
+    const peal = ctx.createOscillator(); peal.type = 'sine'; peal.frequency.setValueAtTime(4800, ctx.currentTime)
 
     const subG = ctx.createGain(); subG.gain.value = 0.0001
     const lowG = ctx.createGain(); lowG.gain.value = 0.0001
@@ -774,14 +774,14 @@ function startAlarm(){
     // Continuous LFO-driven wail (mechanical/electronic civil-defense style)
     // Use a slow LFO to sweep the principal oscillators for a classic wail.
     try{
-      const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.setValueAtTime(0.32, ctx.currentTime)
-      const lfoG = ctx.createGain(); lfoG.gain.value = 220 // sweep depth in Hz
+      const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.setValueAtTime(0.6, ctx.currentTime)
+      const lfoG = ctx.createGain(); lfoG.gain.value = 420 // sweep depth in Hz (increased for higher center)
       lfo.connect(lfoG)
       // apply sweep to main voices
       lfoG.connect(body.frequency)
       lfoG.connect(screech.frequency)
       // smaller sweep for peal to keep it metallic
-      const lfoG2 = ctx.createGain(); lfoG2.gain.value = 180
+      const lfoG2 = ctx.createGain(); lfoG2.gain.value = 360
       lfo.connect(lfoG2); lfoG2.connect(peal.frequency)
       lfo.start()
 
