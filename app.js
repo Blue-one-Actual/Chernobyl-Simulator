@@ -940,6 +940,46 @@ cooling.checked = state.cooling
 updateUI()
 log('Simulator geladen')
 
+// --- DEBUG: Click troubleshooting helper ---
+function enableClickDebug(){
+  if(window._clickDebugEnabled) return
+  window._clickDebugEnabled = true
+  window.enableClickDebug = enableClickDebug
+  window.queryTopElementAt = (x,y)=> document.elementFromPoint(x,y)
+  window.addEventListener('click', function _globalClickDebug(e){
+    try{
+      console.groupCollapsed('Click Debug')
+      console.log('event.target:', e.target)
+      const pt = { x: e.clientX, y: e.clientY }
+      console.log('client coords:', pt)
+      const top = document.elementFromPoint(pt.x, pt.y)
+      console.log('elementFromPoint:', top)
+      // log computed styles that affect pointer events/visibility
+      if(top){
+        const cs = window.getComputedStyle(top)
+        console.log('computed pointer-events:', cs.pointerEvents, 'visibility:', cs.visibility, 'display:', cs.display, 'z-index:', cs.zIndex)
+      }
+      console.groupEnd()
+      // highlight briefly
+      highlightElement(top)
+    }catch(err){ console.error('click debug failed', err) }
+  }, true)
+  console.log('Click debug enabled — click anywhere to inspect the top element (captures during bubble/capture).')
+}
+
+function highlightElement(el){
+  if(!el || !el.style) return
+  const prev = el.style.outline
+  el.style.outline = '3px solid magenta'
+  setTimeout(()=>{ try{ el.style.outline = prev }catch(e){} }, 700)
+}
+
+// Auto-enable if debug flag present in URL or localStorage
+try{
+  const params = new URLSearchParams(window.location.search)
+  if(params.get('debugClicks') === '1' || localStorage.getItem('debugClicks') === '1') enableClickDebug()
+}catch(e){}
+
 // --- RESET Button with password (4532) ---
 document.getElementById('reset-btn')?.addEventListener('click', ()=>{
   const pwd = prompt('⚠️ RESET-PASSWORT (Anlagenleiter):', '')
