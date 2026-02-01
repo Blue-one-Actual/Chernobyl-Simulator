@@ -992,11 +992,13 @@ function stopAlarm(){
         if(!n) return
         try{ if(typeof n.stop === 'function') n.stop() }catch(e){}
         try{ if(typeof n.disconnect === 'function') n.disconnect() }catch(e){}
+        try{ if(n && typeof n.pause === 'function') n.pause() }catch(e){}
       })
     }catch(e){}
     sirenNodes = null
   }
   if(audioContext){ audioContext.close(); audioContext = null }
+  try{ if(window.alarmSampleBlobUrl){ URL.revokeObjectURL(window.alarmSampleBlobUrl); window.alarmSampleBlobUrl = null } }catch(e){}
 }
 
 // Snooze the alarm for a number of seconds (default 60)
@@ -1025,6 +1027,10 @@ try{
         // store the ArrayBuffer on window for startAlarm to decode
         window.alarmSampleArrayBuffer = ab
         window.alarmSampleName = f.name
+        try{
+          if(window.alarmSampleBlobUrl) URL.revokeObjectURL(window.alarmSampleBlobUrl)
+        }catch(e){}
+        window.alarmSampleBlobUrl = URL.createObjectURL(new Blob([ab], { type: f.type || 'audio/mpeg' }))
         log('Alarmdatei bereit — klicke "Alarm auslösen" zum Abspielen')
       }catch(e){ log('Fehler beim Lesen der Datei') }
     })
