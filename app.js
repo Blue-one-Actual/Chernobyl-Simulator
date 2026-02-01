@@ -713,6 +713,86 @@ let originalTitle = document.title
 let titleFlashTimer = null
 let vibrateTimer = null
 
+async function analyzeSampleParams(arrayBuffer, ctx){
+  try{
+    const audioBuf = await ctx.decodeAudioData(arrayBuffer.slice(0))
+    const fs = audioBuf.sampleRate
+    const chan = audioBuf.numberOfChannels>0? audioBuf.getChannelData(0) : audioBuf.getChannelData(0)
+    // limit to first 5 seconds for analysis
+    const maxSamples = Math.min(chan.length, fs * 5)
+    const data = chan.subarray(0, maxSamples)
+
+    // compute simple envelope with 50ms hop
+    const hop = Math.floor(fs * 0.05)
+    const env = []
+    for(let i=0;i<data.length;i+=hop){
+      let sum = 0
+      const end = Math.min(i+hop, data.length)
+      for(let j=i;j<end;j++) sum += Math.abs(data[j])
+      env.push(sum / (end - i + 1e-9))
+    }
+
+    // autocorrelation on envelope to find modulation period (LFO)
+    function autoCorr(arr, maxLag){
+      const n = arr.length
+      const out = new Float32Array(maxLag+1)
+      for(let lag=0; lag<=maxLag; lag++){
+        let s = 0
+        for(let i=0;i+lag<n;i++) s += arr[i]*arr[i+lag]
+        out[lag] = s
+      }
+      return out
+    }
+    const maxLag = Math.min( Math.floor(env.length/2), Math.floor(5 / 0.05) )
+    const corr = autoCorr(env, maxLag)
+    // ignore lag 0, find peak between 1..maxLag
+    let bestLag = 1, bestVal = -Infinity
+    for(let lag=1; lag<=maxLag; lag++){
+      if(corr[lag] > bestVal){ bestVal = corr[lag]; bestLag = lag }
+    }
+    const lfoRate = 1 / (bestLag * 0.05) // Hz
+
+    // find approximate fundamental using autocorrelation on waveform
+    const minF = 40, maxF = 5000
+    const minLag = Math.floor(fs / maxF)
+    const maxLag2 = Math.floor(fs / minF)
+    let fund = 0
+    let best = 0
+    for(let lag=minLag; lag<=maxLag2; lag+=1){
+      let s = 0
+      for(let i=0;i+lag< data.length && i<100000; i++) s += data[i]*data[i+lag]
+      if(s > best){ best = s; fund = lag }
+    }
+    const fundHz = fund>0 ? fs / fund : 300
+
+    // Goertzel-like energy check for a set of candidate bins
+    const candidates = [80,160,320,640,1280,2560,5120]
+    const energies = {}
+    for(const f of candidates){
+      const k = Math.round( (f / fs) * data.length )
+      // simple DFT bin estimate
+      let re=0, im=0
+      for(let n=0;n<data.length;n+=Math.max(1, Math.floor(data.length/4096))){
+        const phi = 2*Math.PI*k*n/data.length
+        re += data[n] * Math.cos(phi)
+        im -= data[n] * Math.sin(phi)
+      }
+      energies[f] = re*re + im*im
+    }
+    // pick strongest high and mid bins
+    const sorted = Object.keys(energies).sort((a,b)=> energies[b]-energies[a])
+    const top = sorted.map(Number)
+    const bodyFreq = fundHz
+    const screechFreq = top.find(x=> x>200) || top[0] || 800
+    const pealFreq = top.find(x=> x>=2000) || top[0] || 3000
+    // derive depth from spectral spread
+    const lfoDepth = Math.max(50, Math.min(2000, Math.abs(screechFreq - bodyFreq) * 0.6))
+    const noiseRatio = (energies[1280] + energies[2560] + energies[5120]) / (energies[80] + energies[160] + 1)
+
+    return { lfoRate: Math.max(0.15, Math.min(2.5, lfoRate)), lfoDepth, bodyFreq: Math.max(60, Math.min(2000, bodyFreq)), screechFreq, pealFreq, noiseRatio }
+  }catch(e){ console.warn('analyze failed', e); return null }
+}
+
 async function startAlarm(){
   if(alarmActive) return
   alarmActive = true
@@ -732,21 +812,14 @@ async function startAlarm(){
     const targetVol = Math.max(0.08, alarmVolume/100 * 1.25)
     master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
-    // If an ArrayBuffer was placed on `window.alarmSampleArrayBuffer`, decode and play it first
+    // If an ArrayBuffer was placed on `window.alarmSampleArrayBuffer`, analyze it and tune the synth to match
+    let matchParams = null
     if(window.alarmSampleArrayBuffer){
       try{
-        const audioBuf = await ctx.decodeAudioData(window.alarmSampleArrayBuffer.slice(0))
-        const src = ctx.createBufferSource()
-        const sampleG = ctx.createGain()
-        src.buffer = audioBuf; src.loop = true
-        sampleG.gain.value = 0.0001
-        src.connect(sampleG); sampleG.connect(master)
-        src.start()
-        sirenNodes = { sampleSrc: src, sampleG, master }
-        const nowS = ctx.currentTime
-        sampleG.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), nowS + 0.02)
-        return
-      }catch(e){ console.warn('sample decode failed', e) }
+        matchParams = await analyzeSampleParams(window.alarmSampleArrayBuffer, ctx)
+        if(matchParams) log(`Alarm: Sample analysiert — LFO ${matchParams.lfoRate.toFixed(2)}Hz, body ${Math.round(matchParams.bodyFreq)}Hz`)
+        else log('Alarm: Sampleanalyse fehlgeschlagen, verwenden Synth-Defaults')
+      }catch(e){ console.warn('sample analysis failed', e) }
     }
 
     // If caller provided a sample URL (relative or absolute), try to load and play it as a looping alarm.
@@ -825,6 +898,20 @@ async function startAlarm(){
       const lfoG2 = ctx.createGain(); lfoG2.gain.value = 360
       lfo.connect(lfoG2); lfoG2.connect(peal.frequency)
       lfo.start()
+
+      // apply analysis-derived parameters if available
+      if(matchParams){
+        try{
+          body.frequency.setValueAtTime(matchParams.bodyFreq, ctx.currentTime)
+          screech.frequency.setValueAtTime(matchParams.screechFreq, ctx.currentTime)
+          peal.frequency.setValueAtTime(matchParams.pealFreq, ctx.currentTime)
+          lfo.frequency.setValueAtTime(matchParams.lfoRate, ctx.currentTime)
+          lfoG.gain.setValueAtTime(matchParams.lfoDepth, ctx.currentTime)
+          lfoG2.gain.setValueAtTime(Math.max(20, matchParams.lfoDepth * 0.75), ctx.currentTime)
+          // boost noise slightly if sample had more high-frequency content
+          try{ noiseG.gain.value = Math.min(0.008, 0.001 + (matchParams.noiseRatio||0) * 0.0008) }catch(e){}
+        }catch(e){ console.warn('apply match params failed', e) }
+      }
 
       // make body and screech more 'mechanical' (triangle-like harmonics)
       try{ body.type = 'triangle' }catch(e){}
