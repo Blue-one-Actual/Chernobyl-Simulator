@@ -689,6 +689,11 @@ function attachSlipDropTargets(){
         if(el.id === 'table-center'){
           if(actions) actions.style.display = 'flex'
           log(`Zettel auf Tisch gelegt — zum Abstempeln bereit`)
+        } else {
+          if(actions) actions.style.display = 'none'
+        }
+      }
+    })
   })
 }
 attachSlipDropTargets()
