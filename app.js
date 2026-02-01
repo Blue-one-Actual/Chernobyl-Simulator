@@ -22,81 +22,98 @@ function log(msg){
 const cooling = el('cooling')
 const startBtn = el('start-btn')
 const stopBtn = el('stop-btn')
-const powerEl = el('power')
-const tempEl = el('temperature')
-const pressureEl = el('pressure')
-const coreGlow = el('core-glow')
-const rodsGroup = el('control-rods')
+  try{
+    audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    const ctx = audioContext
 
-// alarm volume default (declared before any handlers)
-let alarmVolume = 30 // UI-controlled volume (0..100)
+    // master gain (volume controllable) - make alarm notably loud
+    const master = ctx.createGain()
+    master.gain.setValueAtTime(0.0001, ctx.currentTime)
+    master.connect(ctx.destination)
+    const targetVol = Math.max(0.12, alarmVolume/100 * 1.2)
+    master.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.02)
 
-// Reactor manual control elements
-const manualModeEl = el('manual-mode')
-const manualSlider = el('manual-slider')
-const applyManual = el('apply-manual')
+    // CORE: two main oscillators for soviet-style wail + low sub for weight
+    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(40, ctx.currentTime)
+    const main1 = ctx.createOscillator(); main1.type = 'triangle'; main1.frequency.setValueAtTime(220, ctx.currentTime)
+    const main2 = ctx.createOscillator(); main2.type = 'sawtooth'; main2.frequency.setValueAtTime(320, ctx.currentTime)
 
-if(manualModeEl){
-  manualModeEl.addEventListener('change', e=>{
-    state.manualMode = e.target.checked
-    log(`Manuelle Steuerung ${state.manualMode? 'aktiv' : 'aus'}`)
-    if(state.manualMode){
-      // when entering manual mode, map rods -> power
-      state.power = Math.max(0, 100 - state.rods)
-      updateUI()
+    const subG = ctx.createGain(); subG.gain.value = 0.0001
+    const m1G = ctx.createGain(); m1G.gain.value = 0.0001
+    const m2G = ctx.createGain(); m2G.gain.value = 0.0001
+
+    sub.connect(subG); main1.connect(m1G); main2.connect(m2G)
+
+    // slight waveshaper for gritty industrial tone
+    function makeDistortion(amount){
+      const curve = new Float32Array(44100)
+      const k = typeof amount === 'number' ? amount : 50
+      const deg = Math.PI / 180
+      for (let i = 0; i < 44100; ++i) {
+        const x = i * 2 / 44100 - 1
+        curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x))
+      }
+      const sh = ctx.createWaveShaper(); sh.curve = curve; sh.oversample = '2x'
+      return sh
     }
-  })
-}
-if(manualSlider){
-  manualSlider.addEventListener('input', e=>{
-    state.rods = Number(e.target.value)
-    updateRodsVisual()
-    if(state.manualMode){
-      state.power = Math.max(0, 100 - state.rods)
-      updateUI()
-    }
-  })
-}
-if(applyManual){
-  applyManual.addEventListener('click', ()=>{
-    state.running = true
-    log('Manueller Modus angewendet')
-  })
-}
+    const shaper = makeDistortion(8)
 
-cooling.addEventListener('change', e => {
-  state.cooling = e.target.checked
-  log(`Kühlung ${state.cooling? 'an' : 'aus'}`)
-})
+    // filtering and compression for a large PA feel
+    const lowpass = ctx.createBiquadFilter(); lowpass.type = 'lowpass'; lowpass.frequency.value = 4000
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.setValueAtTime(-10, ctx.currentTime); comp.ratio.setValueAtTime(10, ctx.currentTime); comp.attack.setValueAtTime(0.005, ctx.currentTime); comp.release.setValueAtTime(0.2, ctx.currentTime)
 
-startBtn.addEventListener('click', ()=>{
-  state.running = true
-  log('Reaktorbetrieb: START')
-})
-stopBtn.addEventListener('click', ()=>{
-  state.running = false
-  log('Reaktorbetrieb: STOP')
-})
+    subG.connect(shaper); m1G.connect(shaper); m2G.connect(shaper)
+    shaper.connect(lowpass); lowpass.connect(comp); comp.connect(master)
 
-// SCRAM button removed from UI; use AZ-5 to trigger emergency shutdown
+    // noise layer (metallic) for realism
+    const bufferSize = Math.floor(ctx.sampleRate * 0.6)
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+    const ndata = noiseBuffer.getChannelData(0)
+    for(let i=0;i<bufferSize;i++) ndata[i] = (Math.random()*2 - 1) * 0.5
+    const noiseSrc = ctx.createBufferSource(); noiseSrc.buffer = noiseBuffer; noiseSrc.loop = true
+    const noiseF = ctx.createBiquadFilter(); noiseF.type = 'bandpass'; noiseF.frequency.value = 1400; noiseF.Q.value = 0.8
+    const noiseG = ctx.createGain(); noiseG.gain.value = 0.0001
+    noiseSrc.connect(noiseF); noiseF.connect(noiseG); noiseG.connect(master)
 
-// draw control rods (visual only)
-// control rods removed; visual will be reworked separately
+    // start oscillators
+    sub.start(); main1.start(); main2.start(); noiseSrc.start()
 
-function updateUI(){
-  powerEl.textContent = Math.round(state.power)
-  tempEl.textContent = Math.round(state.temp)
-  pressureEl.textContent = state.pressure.toFixed(1)
-  coreGlow.setAttribute('opacity', Math.min(0.9, 0.12 + state.power/110))
-  // shift color from yellow -> orange -> red as power rises
-  if(state.power > 80) coreGlow.setAttribute('fill', '#ff3b3b')
-  else if(state.power > 50) coreGlow.setAttribute('fill', '#ff8a00')
-  else coreGlow.setAttribute('fill', '#ffd54f')
-  
-  // rotate power gauge needle: map 0..100 -> -90..+90
-  const needle = document.getElementById('power-needle')
-  if(needle){
-    const angle = (state.power/100) * 180 - 90
+    sirenNodes = {sub, main1, main2, subG, m1G, m2G, shaper, lowpass, comp, noiseSrc, noiseG, master}
+
+    // Sweep LFO to create wail (modulates frequencies)
+    const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.setValueAtTime(0.45, ctx.currentTime)
+    const lfoG = ctx.createGain(); lfoG.gain.value = 65
+    lfo.connect(lfoG)
+    lfoG.connect(main1.frequency); lfoG.connect(main2.frequency)
+    lfo.start()
+
+    // Pulsed gate using scheduled gain automation for a martial pattern
+    const pulseInterval = 1000
+    sirenTimer = setInterval(()=>{
+      try{
+        const now = ctx.currentTime
+        const vol = Math.max(0.12, alarmVolume/100 * 1.2)
+        const attack = 0.02
+        const sustain = 0.7
+        const release = 0.18
+
+        ;[subG, m1G, m2G].forEach((g, idx)=>{
+          g.gain.cancelScheduledValues(now)
+          g.gain.setValueAtTime(0.0001, now)
+          const mult = idx===0 ? 1.8 : (idx===1 ? 1.2 : 1.0)
+          g.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * mult), now + attack)
+          g.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
+        })
+
+        noiseG.gain.cancelScheduledValues(now)
+        noiseG.gain.setValueAtTime(0.0001, now)
+        noiseG.gain.exponentialRampToValueAtTime(Math.max(0.002, vol * 0.12), now + 0.02)
+        noiseG.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release)
+      }catch(e){ console.error('soviet pulse failed', e) }
+    }, pulseInterval)
+  }catch(e){
+    console.error('Audio failed', e)
+  }
     needle.setAttribute('transform', `rotate(${angle} 100 140)`)
   }
   // update analog needles
