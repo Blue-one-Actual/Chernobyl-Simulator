@@ -619,6 +619,12 @@ function playStampSound(){
 function stampSlip(slipEl, status){
   if(slipEl.classList.contains('approved') || slipEl.classList.contains('denied')) return
   const id = slipEl.dataset.id || '??'
+  // only allow stamping when the slip is on the work table (table-center)
+  const parentId = slipEl.parentElement && slipEl.parentElement.id
+  if(parentId !== 'table-center'){
+    log(`Stamping blocked: Slip #${id} must be on the Tischmitte to stamp`)
+    return
+  }
   slipEl.classList.remove('approved','denied')
   slipEl.classList.add(status)
   const stamp = slipEl.querySelector('.stamp')
@@ -632,45 +638,65 @@ function stampSlip(slipEl, status){
   // disable buttons
   slipEl.querySelectorAll('button').forEach(b=>b.disabled = true)
   log(`Security: Slip #${id} ${status.toUpperCase()}`)
+  // move finalized slip to the processing board on the right (storage area)
+  try{
+    const board = document.getElementById('slip-board')
+    if(board){
+      board.appendChild(slipEl)
+      const actions = slipEl.querySelector('.slip-actions')
+      if(actions) actions.style.display = 'none'
+      // fully disable interactive buttons for stored slips
+      slipEl.querySelectorAll('button').forEach(b=>{ b.disabled = true; b.style.opacity = 0.6 })
+    }
+  }catch(e){console.warn('move stamped slip failed', e)}
 }
 
-// Drag-and-drop for slips
+// Drag-and-drop for slips (works for source, table center and board)
 let draggingSlip = null
-document.querySelectorAll('.slip[draggable="true"]').forEach(s => {
-  s.addEventListener('dragstart', ev => {
-    draggingSlip = s
-    ev.dataTransfer.setData('text/plain', s.dataset.id || '')
-    s.classList.add('dragging')
-  })
-  s.addEventListener('dragend', ev => {
-    draggingSlip = null
-    s.classList.remove('dragging')
-  })
+document.addEventListener('dragstart', ev => {
+  const s = ev.target.closest && ev.target.closest('.slip')
+  if(!s) return
+  draggingSlip = s
+  try{ ev.dataTransfer.setData('text/plain', s.dataset.id || '') }catch(e){}
+  s.classList.add('dragging')
+  log(`Zettel ${s.dataset.id} wird gezogen`)
+})
+document.addEventListener('dragend', ev => {
+  const s = ev.target.closest && ev.target.closest('.slip')
+  if(s) s.classList.remove('dragging')
+  draggingSlip = null
 })
 
 const slipBoard = document.getElementById('slip-board')
 const slipSource = document.getElementById('slip-source')
-;[slipBoard, slipSource].forEach(el => {
-  if(!el) return
-  el.addEventListener('dragover', ev => { ev.preventDefault(); el.classList.add('highlight') })
-  el.addEventListener('dragleave', ev => { el.classList.remove('highlight') })
-  el.addEventListener('drop', ev => {
-    ev.preventDefault(); el.classList.remove('highlight')
-    const id = ev.dataTransfer.getData('text/plain')
-    // find the element by data-id (prefer draggingSlip)
-    const node = draggingSlip || document.querySelector(`.slip[data-id="${id}"]`)
-    if(node && el !== node.parentElement){
-      el.appendChild(node)
-      // if dropped into target, show actions; if moved back to source, hide
-      const actions = node.querySelector('.slip-actions')
-      if(el.id === 'slip-board'){
-        if(actions) actions.style.display = 'flex'
-      } else {
-        if(actions) actions.style.display = 'none'
+function attachSlipDropTargets(){
+  const tableCenter = document.getElementById('table-center')
+  ;[slipBoard, slipSource, tableCenter].forEach(el => {
+    if(!el) return
+    // avoid adding duplicate listeners
+    if(el._dropHandlerAttached) return
+    el._dropHandlerAttached = true
+    el.addEventListener('dragover', ev => { ev.preventDefault(); el.classList.add('highlight') })
+    el.addEventListener('dragleave', ev => { el.classList.remove('highlight') })
+    el.addEventListener('drop', ev => {
+      ev.preventDefault(); el.classList.remove('highlight')
+      const id = ev.dataTransfer.getData('text/plain')
+      const node = draggingSlip || document.querySelector(`.slip[data-id="${id}"]`)
+      if(node && el !== node.parentElement){
+        el.appendChild(node)
+        const actions = node.querySelector('.slip-actions')
+        // show actions only when placed on the work table (table-center)
+        if(el.id === 'table-center'){
+          if(actions) actions.style.display = 'flex'
+          log(`Zettel auf Tisch gelegt — zum Abstempeln bereit`)
+        } else {
+          if(actions) actions.style.display = 'none'
+        }
       }
-    }
+    })
   })
-})
+}
+attachSlipDropTargets()
 
 
 let turbineRunning = false
@@ -1300,8 +1326,7 @@ function setupSlipInteractions(slip){
 }
 
 function createTableCenterIfMissing(){
-  const secPanel = document.querySelector('#view-security .security-panel')
-  if(!secPanel) return null
+  // place the table center as a fixed red-styled work table on the left side of the screen
   let table = document.getElementById('table-center')
   if(table) return table
   table = document.createElement('div')
@@ -1309,10 +1334,9 @@ function createTableCenterIfMissing(){
   table.className = 'table-center'
   const note = document.createElement('div'); note.className = 'note'; note.textContent = 'Tischmitte: Lege die Blätter hier ab';
   table.appendChild(note)
-  // insert table before the existing slip-board-wrap so UI still shows right box
-  const slipsWrap = secPanel.querySelector('.slip-board-wrap')
-  if(slipsWrap) secPanel.insertBefore(table, slipsWrap)
-  else secPanel.appendChild(table)
+  // append to body so it stays visually at the left (red area) regardless of active view
+  document.body.appendChild(table)
+  log('Tisch-Center erstellt')
   return table
 }
 
@@ -1330,7 +1354,7 @@ function generateRandomSlipContent(i){
   return `<strong>Anfrage ${i}:</strong> ${reason}. Name: ${name}. ${extra}.` 
 }
 
-function generateTableSlips(count = 100){
+function generateTableSlips(count = 20){
   const table = createTableCenterIfMissing()
   if(!table) return
   // clear existing slips in table
@@ -1339,56 +1363,22 @@ function generateTableSlips(count = 100){
   const slipSource = document.getElementById('slip-source')
   if(slipSource) slipSource.innerHTML = '<div class="source-title">Alte Zettel (leer)</div>'
 
-  const placedRects = []
-  const maxAttempts = 200
-  // container size
-  const rect = table.getBoundingClientRect()
-  const W = Math.max(300, rect.width || 700)
-  const H = Math.max(220, rect.height || 320)
-
   for(let i=1;i<=count;i++){
     const slip = document.createElement('div')
     slip.className = 'slip'
     slip.dataset.id = 'T' + i
+    // shorter content for small slips
+    const reasons = ['Wartung','Zugang','Ersatzteile','Masken','Kontrolle']
     slip.innerHTML = `
-      <div class="slip-body">${generateRandomSlipContent(i)}</div>
+      <div class="slip-body"><strong>Anfrage ${i}</strong><br>${reasons[i%reasons.length]}</div>
       <div class="slip-actions" style="display:none">
-        <button class="btn-approve">Approve</button>
-        <button class="btn-deny">Deny</button>
+        <button class="btn-approve" style="padding:2px 4px;font-size:8px">✓</button>
+        <button class="btn-deny" style="padding:2px 4px;font-size:8px">✗</button>
       </div>
       <div class="stamp" aria-hidden="true"></div>
     `
-    // temporarily append invisibly to measure
-    slip.style.visibility = 'hidden'
     table.appendChild(slip)
-    // measure
-    const srect = slip.getBoundingClientRect()
-    const sw = Math.min(220, srect.width || 170)
-    const sh = Math.min(120, srect.height || 80)
-
-    // find a non-overlapping position
-    let placed = false
-    for(let attempt=0; attempt<maxAttempts && !placed; attempt++){
-      const x = Math.floor(Math.random() * Math.max(1, W - sw - 20)) + 10
-      const y = Math.floor(Math.random() * Math.max(1, H - sh - 20)) + 30
-      // check overlap
-      let ok = true
-      for(const r of placedRects){
-        if(!(x + sw < r.x || x > r.x + r.w || y + sh < r.y || y > r.y + r.h)){ ok = false; break }
-      }
-      if(ok){ slip.style.left = x + 'px'; slip.style.top = y + 'px'; placedRects.push({x,y,w:sw,h:sh}); placed = true }
-    }
-    if(!placed){ // fallback: push to grid
-      const gx = 12 + (i%8) * (sw + 8)
-      const gy = 40 + Math.floor(i/8) * (sh + 8)
-      slip.style.left = gx + 'px'; slip.style.top = gy + 'px'
-      placedRects.push({x:gx,y:gy,w:sw,h:sh})
-    }
-    // small random rotation for realism
-    const rot = (Math.random()*30 - 15).toFixed(1)
-    slip.style.transform = `rotate(${rot}deg)`
-    slip.style.visibility = 'visible'
-    // ensure actions hidden initially (only show when dropped into board)
+    // ensure actions hidden initially (only show when on table)
     const actions = slip.querySelector('.slip-actions')
     if(actions) actions.style.display = 'none'
     // wire interactions
@@ -1396,8 +1386,10 @@ function generateTableSlips(count = 100){
   }
 }
 
-// generate 100 slips on load for the security table
-generateTableSlips(100)
+// generate 20 slips on load for the security table
+generateTableSlips(20)
+// attach drop handlers again now that table-center exists
+try{ attachSlipDropTargets() }catch(e){}
     log('SICHERHEIT: Reset-Versuch mit falschem Passwort')
     return
   }
