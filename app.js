@@ -852,6 +852,46 @@ let sirenNodes = null
 let originalTitle = document.title
 let titleFlashTimer = null
 let vibrateTimer = null
+// single active custom alarm buffer (decoded)
+let customAlarmBuffer = null
+// single current alarm player controller
+let currentAlarmPlayer = null
+
+function stopCurrentAlarm(){
+  // stop custom file player
+  try{ if(currentAlarmPlayer && typeof currentAlarmPlayer.stop === 'function') currentAlarmPlayer.stop() }catch(e){}
+  currentAlarmPlayer = null
+  // stop synth siren
+  try{ stopSecuritySiren() }catch(e){}
+  // stop annunciator tone
+  try{ stopAnnunciatorTone() }catch(e){}
+}
+
+function playCustomAlarmBuffer(buffer, volume=0.6, loop=true){
+  stopCurrentAlarm()
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const src = ctx.createBufferSource()
+    // trim buffer to max 5s
+    const fs = buffer.sampleRate
+    const maxSamples = Math.min(buffer.length, fs * 5)
+    const trimmed = ctx.createBuffer(buffer.numberOfChannels, maxSamples, fs)
+    for(let ch=0; ch<buffer.numberOfChannels; ch++){
+      const srcData = buffer.getChannelData(ch)
+      const dst = trimmed.getChannelData(ch)
+      dst.set(srcData.subarray(0, maxSamples))
+    }
+    src.buffer = trimmed
+    src.loop = !!loop
+    const g = ctx.createGain(); g.gain.value = Math.max(0.0001, Math.min(1, volume))
+    src.connect(g); g.connect(ctx.destination)
+    src.start()
+    currentAlarmPlayer = {
+      type: 'file', ctx, src, gain: g,
+      stop(){ try{ src.stop(); ctx.close() }catch(e){} }
+    }
+  }catch(e){ console.error('playCustomAlarmBuffer failed', e) }
+}
 
 async function analyzeSampleParams(arrayBuffer, ctx){
   try{
@@ -934,6 +974,8 @@ async function analyzeSampleParams(arrayBuffer, ctx){
 }
 
 async function startAlarm(){
+  // ensure no other alarm audio is playing concurrently
+  try{ stopCurrentAlarm() }catch(e){}
   if(alarmActive) return
   alarmActive = true
   log('Security Alarm ausgelöst')
@@ -960,8 +1002,16 @@ async function startAlarm(){
       // if there's an ArrayBuffer upload, decode and play that once
       try{
         if(window.alarmSampleArrayBuffer){
-          const audioBuf = await ctx.decodeAudioData(window.alarmSampleArrayBuffer.slice(0))
-          const src = ctx.createBufferSource(); src.buffer = audioBuf; src.loop = false
+          const fullBuf = await ctx.decodeAudioData(window.alarmSampleArrayBuffer.slice(0))
+          // trim to max 5s to avoid playing long music ('symphony')
+          const fs = fullBuf.sampleRate
+          const maxSamples = Math.min(fullBuf.length, fs * 5)
+          const trimmed = ctx.createBuffer(fullBuf.numberOfChannels, maxSamples, fs)
+          for(let ch=0; ch<fullBuf.numberOfChannels; ch++){
+            const srcd = fullBuf.getChannelData(ch)
+            trimmed.getChannelData(ch).set(srcd.subarray(0, maxSamples))
+          }
+          const src = ctx.createBufferSource(); src.buffer = trimmed; src.loop = false
           const g = ctx.createGain(); g.gain.value = 0.0001
           src.connect(g); g.connect(master)
           src.start()
@@ -973,7 +1023,7 @@ async function startAlarm(){
             const idx = activePlayHandles.findIndex(h=>h.src===src)
             if(idx!==-1) activePlayHandles.splice(idx,1)
           }
-          log(`Alarm: MP3 spielt einmal — ${window.alarmSampleName || 'uploaded sample'}`)
+          log(`Alarm: hochgeladene Datei (getrimmt auf 5s) spielt einmal — ${window.alarmSampleName || 'uploaded sample'}`)
           return
         }
       }catch(e){ console.warn('sample playback failed', e) }
@@ -1212,6 +1262,7 @@ async function startAlarm(){
 }
 
 function stopAlarm(){
+  try{ stopCurrentAlarm() }catch(e){}
   if(!alarmActive) return
   alarmActive = false
   log('Security Alarm gestoppt')
