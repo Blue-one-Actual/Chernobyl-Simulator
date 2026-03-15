@@ -11,6 +11,9 @@ const state = {
   dosage: 0.2 // Sv/h (radiation dose)
 }
 
+// global alarm volume (0..100)
+let alarmVolume = 30
+
 const el = id => document.getElementById(id)
 const logBox = el('log')
 function log(msg){
@@ -263,6 +266,7 @@ const annunciators = {
 }
 let annAudio = null
 let annOsc = null
+let annGain = null
 function setAnnunciator(key, mode){
   if(!annunciators[key]) return
   annunciators[key].state = mode // 'ok' | 'blink' | 'on'
@@ -283,18 +287,22 @@ function startAnnunciatorTone(){
     annAudio = new (window.AudioContext || window.webkitAudioContext)()
     annOsc = annAudio.createOscillator()
     const g = annAudio.createGain()
+    annGain = g
     annOsc.type = 'sine'
     annOsc.frequency.value = 720
     g.gain.value = 0.0001
     annOsc.connect(g); g.connect(annAudio.destination)
     annOsc.start()
-    g.gain.exponentialRampToValueAtTime(0.06, annAudio.currentTime + 0.02)
+    // map from global alarmVolume
+    const mapped = Math.max(0.02, (alarmVolume||30)/100 * 0.08)
+    g.gain.exponentialRampToValueAtTime(mapped, annAudio.currentTime + 0.02)
   }catch(e){console.error('ann audio failed',e)}
 }
 function stopAnnunciatorTone(){
   if(!annAudio) return
   try{ annAudio.close() }catch(e){}
   annAudio = null; annOsc = null
+  annGain = null
 }
 
 // init annunciator visuals
@@ -821,6 +829,15 @@ function updateTurbineView(){
           sirenNodes.master.gain.linearRampToValueAtTime(mapped, now + 0.06)
         }catch(e){ console.error('volume adjust failed', e) }
       }
+      // adjust annunciator tone gain if present
+      try{
+        if(annGain && annAudio){
+          const aNow = annAudio.currentTime
+          const mappedA = Math.max(0.01, alarmVolume/100 * 0.08)
+          annGain.gain.cancelScheduledValues(aNow)
+          annGain.gain.linearRampToValueAtTime(mappedA, aNow + 0.06)
+        }
+      }catch(e){ /* ignore */ }
     })
   }
 
