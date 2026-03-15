@@ -999,79 +999,14 @@ async function startAlarm(){
     const activePlayHandles = []
 
     async function playOnce(){
-      // if there's an ArrayBuffer upload, decode and play that once
-      try{
-        if(window.alarmSampleArrayBuffer){
-          const fullBuf = await ctx.decodeAudioData(window.alarmSampleArrayBuffer.slice(0))
-          // trim to max 5s to avoid playing long music ('symphony')
-          const fs = fullBuf.sampleRate
-          const maxSamples = Math.min(fullBuf.length, fs * 5)
-          const trimmed = ctx.createBuffer(fullBuf.numberOfChannels, maxSamples, fs)
-          for(let ch=0; ch<fullBuf.numberOfChannels; ch++){
-            const srcd = fullBuf.getChannelData(ch)
-            trimmed.getChannelData(ch).set(srcd.subarray(0, maxSamples))
-          }
-          const src = ctx.createBufferSource(); src.buffer = trimmed; src.loop = false
-          const g = ctx.createGain(); g.gain.value = 0.0001
-          src.connect(g); g.connect(master)
-          src.start()
-          // store to allow stopping
-          activePlayHandles.push({ type: 'buffer', src, g })
-          g.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), ctx.currentTime + 0.02)
-          // remove handle when ended
-          src.onended = ()=>{
-            const idx = activePlayHandles.findIndex(h=>h.src===src)
-            if(idx!==-1) activePlayHandles.splice(idx,1)
-          }
-          log(`Alarm: hochgeladene Datei (getrimmt auf 5s) spielt einmal — ${window.alarmSampleName || 'uploaded sample'}`)
-          return
-        }
-      }catch(e){ console.warn('sample playback failed', e) }
-
-      // if blob URL exists, use HTMLAudio as fallback
-      try{
-        if(window.alarmSampleBlobUrl){
-          const audio = new Audio(window.alarmSampleBlobUrl)
-          audio.loop = false
-          audio.volume = Math.min(1, (alarmVolume||30)/100)
-          audio.play().catch(()=>{})
-          activePlayHandles.push({ type: 'audio', audio })
-          audio.addEventListener('ended', ()=>{
-            const idx = activePlayHandles.findIndex(h=>h.audio===audio)
-            if(idx!==-1) activePlayHandles.splice(idx,1)
-          })
-          log('Alarm: Blob-URL wird einmal abgespielt')
-          return
-        }
-      }catch(e){ console.warn('blob playback failed', e) }
-
-      // if a sample URL is provided, fetch decode and play once
-      try{
-        if(window.alarmSampleUrl){
-          const resp = await fetch(window.alarmSampleUrl)
-          if(resp.ok){
-            const ab = await resp.arrayBuffer()
-            const audioBuf = await ctx.decodeAudioData(ab)
-            const src = ctx.createBufferSource(); src.buffer = audioBuf; src.loop = false
-            const g = ctx.createGain(); g.gain.value = 0.0001
-            src.connect(g); g.connect(master); src.start()
-            activePlayHandles.push({ type: 'buffer', src, g })
-            g.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), ctx.currentTime + 0.02)
-            src.onended = ()=>{ const idx = activePlayHandles.findIndex(h=>h.src===src); if(idx!==-1) activePlayHandles.splice(idx,1) }
-            log('Alarm: URL-Sample spielt einmal')
-            return
-          }
-        }
-      }catch(e){ console.warn('sample URL playback failed', e) }
-
-      // if custom factory exists, start it and schedule stop after 1s (factory may implement its own decay)
+      // Only use internal generators — custom uploaded/URL samples removed
+      // Try custom factory if present, otherwise fallback to a short synth beep
       try{
         if(typeof window.customAlarmFactory === 'function'){
           const controller = window.customAlarmFactory(ctx, master)
           if(controller && typeof controller.start === 'function'){
-            const maybe = await controller.start()
+            await controller.start()
             activePlayHandles.push({ type: 'custom', controller })
-            // schedule stop in ~1s if factory has stop
             setTimeout(()=>{ try{ if(controller && typeof controller.stop === 'function') controller.stop(); }catch(e){} }, 1000)
             log('Alarm: Custom factory Einmalruf')
             return
@@ -1079,7 +1014,6 @@ async function startAlarm(){
         }
       }catch(e){ console.warn('custom play failed', e) }
 
-      // fallback: create a short synthesized beep (one-shot)
       try{
         const o = ctx.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(450, ctx.currentTime)
         const g = ctx.createGain(); g.gain.value = 0.0001
@@ -1088,7 +1022,7 @@ async function startAlarm(){
         g.gain.exponentialRampToValueAtTime(Math.max(0.002, targetVol * 0.8), ctx.currentTime + 0.01)
         g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8)
         setTimeout(()=>{ try{ o.stop() }catch(e){} }, 900)
-        activePlayHandles.push({ type: 'buffer', src: o, g })
+        activePlayHandles.push({ type: 'synth', src: o, g })
         log('Alarm: Synth-Einmalton')
       }catch(e){ console.error('fallback beep failed', e) }
     }
@@ -1102,27 +1036,7 @@ async function startAlarm(){
 
     // If caller provided a sample URL (relative or absolute), try to load and play it as a looping alarm.
     // Example: in the console set `window.alarmSampleUrl = 'navy_alarm.mp3'` and then trigger the alarm.
-    if(window.alarmSampleUrl){
-      try{
-        const resp = await fetch(window.alarmSampleUrl)
-        if(resp.ok){
-          const ab = await resp.arrayBuffer()
-          const audioBuf = await ctx.decodeAudioData(ab)
-          const src = ctx.createBufferSource()
-          const sampleG = ctx.createGain()
-          src.buffer = audioBuf; src.loop = true
-          sampleG.gain.value = 0.0001
-          src.connect(sampleG); sampleG.connect(master)
-          src.start()
-          // expose nodes so stopAlarm can stop/cleanup
-          sirenNodes = { sampleSrc: src, sampleG, master }
-          // ramp sample gain up
-          const nowS = ctx.currentTime
-          sampleG.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol * 1.0), nowS + 0.02)
-          return
-        }
-      }catch(e){ console.warn('sample load failed', e) }
-    }
+    // looped sample URLs removed — only internal alarms supported
 
     // If a custom alarm factory is registered on window, use it (factory should return {start, stop})
     if(typeof window.customAlarmFactory === 'function'){
@@ -1284,7 +1198,7 @@ function stopAlarm(){
     sirenNodes = null
   }
   if(audioContext){ audioContext.close(); audioContext = null }
-  try{ if(window.alarmSampleBlobUrl){ URL.revokeObjectURL(window.alarmSampleBlobUrl); window.alarmSampleBlobUrl = null } }catch(e){}
+  // custom alarm blobs disabled; nothing to revoke
 }
 
 // Snooze the alarm for a number of seconds (default 60)
@@ -1299,31 +1213,7 @@ document.getElementById('raise-alarm')?.addEventListener('click', ()=> startAlar
 document.getElementById('stop-alarm')?.addEventListener('click', ()=> stopAlarm())
 document.getElementById('snooze-alarm')?.addEventListener('click', ()=> snoozeAlarm(60))
 
-// File input handler for local alarm sample
-try{
-  const fileInput = document.getElementById('alarm-file-input')
-  const loadBtn = document.getElementById('alarm-file-load')
-  if(fileInput && loadBtn){
-    loadBtn.addEventListener('click', async ()=>{
-      const f = fileInput.files && fileInput.files[0]
-      if(!f) return log('Keine Datei ausgewählt')
-      log('Lade Alarmdatei: ' + f.name)
-      try{
-        const ab = await f.arrayBuffer()
-        // store the ArrayBuffer on window for startAlarm to decode
-        window.alarmSampleArrayBuffer = ab
-        window.alarmSampleName = f.name
-        try{
-          if(window.alarmSampleBlobUrl) URL.revokeObjectURL(window.alarmSampleBlobUrl)
-        }catch(e){}
-        window.alarmSampleBlobUrl = URL.createObjectURL(new Blob([ab], { type: f.type || 'audio/mpeg' }))
-        log('Alarmdatei bereit — klicke "Alarm auslösen" zum Abspielen')
-      }catch(e){ log('Fehler beim Lesen der Datei') }
-    })
-    // also allow double-click on input to auto-select and prepare
-    fileInput.addEventListener('change', ()=>{})
-  }
-}catch(e){}
+// user-upload handling removed — custom alarm files disabled
 
 // If user pasted a short alarm snippet, provide a wrapped factory for convenience.
 // This uses the user's pattern (square oscillator, quick decay) and exposes start/stop.
