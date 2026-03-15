@@ -383,6 +383,103 @@ function triggerAZ5(){
   }
 }
 
+// --- Security center UI interactions (alarm banner, cameras) ---
+(function initSecurityUI(){
+  const secAlarm = document.getElementById('security-alarm')
+  const raise = document.getElementById('raise-alarm')
+  const stop = document.getElementById('stop-alarm')
+  const vol = document.getElementById('alarm-volume')
+  const alarmFileInput = document.getElementById('alarm-file-input')
+
+  // lightweight security siren (synth) — independent AudioContext so volume can be controlled
+  let securitySiren = null
+  function startSecuritySiren(level = 40){
+    if(securitySiren) return
+    try{
+      const ctx = new (window.AudioContext || window.webkitAudioContext)()
+      const master = ctx.createGain(); master.gain.value = 0.0001; master.connect(ctx.destination)
+
+      const osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = 420
+      const lfo = ctx.createOscillator(); lfo.type = 'triangle'; lfo.frequency.value = 1.2
+      const lfoG = ctx.createGain(); lfoG.gain.value = 120
+      lfo.connect(lfoG); lfoG.connect(osc.frequency)
+
+      const g = ctx.createGain(); g.gain.value = 0.0001
+      osc.connect(g); g.connect(master)
+
+      osc.start(); lfo.start()
+      const mapped = Math.max(0.02, level/100 * 0.28)
+      master.gain.exponentialRampToValueAtTime(mapped, ctx.currentTime + 0.02)
+
+      securitySiren = { ctx, master, osc, lfo, g }
+    }catch(e){ console.error('startSecuritySiren failed', e); securitySiren = null }
+  }
+
+  function stopSecuritySiren(){
+    if(!securitySiren) return
+    try{
+      const { ctx, osc, lfo, master } = securitySiren
+      try{ master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.02) }catch(e){}
+      try{ osc.stop(); lfo.stop() }catch(e){}
+      setTimeout(()=>{ try{ ctx.close() }catch(e){} }, 220)
+    }catch(e){ console.error(e) }
+    securitySiren = null
+  }
+
+  if(raise) raise.addEventListener('click', ()=>{
+    if(secAlarm) { secAlarm.removeAttribute('hidden'); secAlarm.classList.add('active') }
+    setAnnunciator('SEC','blink')
+    log('Security: Alarm ausgelöst')
+    startSecuritySiren(Number(vol?.value || 40))
+  })
+
+  if(stop) stop.addEventListener('click', ()=>{
+    if(secAlarm) { secAlarm.setAttribute('hidden',''); secAlarm.classList.remove('active') }
+    setAnnunciator('SEC','ok')
+    log('Security: Alarm gestoppt')
+    stopSecuritySiren()
+  })
+
+  if(vol) vol.addEventListener('input', (e)=>{
+    const v = Number(e.target.value||30)
+    if(securitySiren && securitySiren.master){
+      try{ securitySiren.master.gain.setValueAtTime(Math.max(0.01, v/100 * 0.28), securitySiren.ctx.currentTime) }catch(e){}
+    }
+  })
+
+  if(alarmFileInput) alarmFileInput.addEventListener('change', (ev)=>{
+    // user-supplied file could be decoded and swapped in — placeholder: log selection
+    const f = ev.target.files && ev.target.files[0]
+    if(f) log('Security: Lokale Alarmdatei ausgewählt — Vorschau nicht implementiert')
+  })
+
+  // camera modal
+  const modal = document.getElementById('camera-modal')
+  const modalPreview = document.getElementById('camera-modal-preview')
+  const modalClose = document.getElementById('camera-modal-close')
+  const modalBackdrop = document.getElementById('camera-modal-backdrop')
+  const snapBtn = document.getElementById('camera-modal-snap')
+
+  document.querySelectorAll('.camera-tile').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const cam = el.dataset.cam || '—'
+      log(`Kamera ${cam} ausgewählt`)
+      document.querySelectorAll('.camera-tile').forEach(t=>t.classList.remove('active'))
+      el.classList.add('active')
+      if(modal && modalPreview){
+        modal.removeAttribute('hidden'); modal.setAttribute('aria-hidden','false')
+        modalPreview.textContent = 'Kamera ' + cam + ' — Platzhalter Vorschaubild'
+      }
+    })
+  })
+
+  function closeModal(){ if(modal){ modal.setAttribute('hidden',''); modal.setAttribute('aria-hidden','true'); document.querySelectorAll('.camera-tile').forEach(t=>t.classList.remove('active')) } }
+  modalClose?.addEventListener('click', closeModal)
+  modalBackdrop?.addEventListener('click', closeModal)
+  snapBtn?.addEventListener('click', ()=>{ log('Snapshot erstellt (Platzhalter)'); closeModal() })
+
+})()
+
 // --- Telephone system and global call bus ---
 // keep legacy security phone API but add multi-room support
 let phoneState = 'idle' // legacy single security phone state

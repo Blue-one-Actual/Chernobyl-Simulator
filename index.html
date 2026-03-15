@@ -107,7 +107,33 @@
         <div class="core-card">
           <div class="card-header"><h2>Security Center</h2></div>
           <div class="security-panel">
-            <p>Überwachungskameras: <strong>Online</strong></p>
+            <div class="security-header" style="display:flex;align-items:center;justify-content:space-between">
+              <h3 style="margin:0;color:#ffd54f">Sicherheitsstatus</h3>
+              <div id="security-alarm" class="alarm-banner" role="status" aria-live="assertive" hidden><span>ALARM - SICHERHEIT</span></div>
+            </div>
+
+            <div class="security-top" style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
+              <div class="camera-grid">
+                <div class="camera-tile" data-cam="1">Kamera 1</div>
+                <div class="camera-tile" data-cam="2">Kamera 2</div>
+                <div class="camera-tile" data-cam="3">Kamera 3</div>
+                <div class="camera-tile" data-cam="4">Kamera 4</div>
+              </div>
+
+              <div class="security-controls-extended" style="flex:1;min-width:220px">
+                <div class="security-controls" style="display:flex;gap:8px;margin-bottom:8px">
+                  <button id="raise-alarm" class="danger">Alarm auslösen</button>
+                  <button id="stop-alarm">Alarm stoppen</button>
+                </div>
+                <label class="vol-label">Lautstärke: <input id="alarm-volume" type="range" min="0" max="100" value="30"></label>
+                <div style="margin-top:8px;">
+                  <label style="font-size:0.9em;">Lokale Alarmdatei:</label>
+                  <input id="alarm-file-input" type="file" accept="audio/*">
+                  <button id="alarm-file-load" style="margin-left:6px;">Als Alarm wählen</button>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -487,5 +513,16 @@
     <small>Nur eine vereinfachte, pädagogische Simulation — nicht für echte Steuerungen.</small>
   </footer>
   <script src="app.js" defer></script>
+  <!-- Camera modal for large previews -->
+  <div id="camera-modal" class="camera-modal" hidden aria-hidden="true">
+    <div class="camera-modal-backdrop" id="camera-modal-backdrop"></div>
+    <div class="camera-modal-content" role="dialog" aria-modal="true">
+      <button id="camera-modal-close" class="camera-modal-close" aria-label="Schließen">×</button>
+      <div id="camera-modal-preview" class="camera-modal-preview">VORSCHAU</div>
+      <div class="camera-modal-footer">
+        <button id="camera-modal-snap" class="button">Snapshot</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
